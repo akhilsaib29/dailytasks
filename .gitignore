@@ -1,0 +1,6 @@
+.env
+seed.sql
+seed.json
+*.xlsx
+__pycache__/
+.vercel

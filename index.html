@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice Daybook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: Linear-style app shell — sidebar (views + area/project tree) | main workspace | slide-in task drawer */
+:root{
+  --bg:#f8fafc;--panel:#ffffff;--side:#f1f5f9;--line:#e2e8f0;--line-2:#cbd5e1;--fg:#0f172a;--muted:#64748b;--faint:#94a3b8;
+  --primary:#2563eb;--primary-soft:#eff6ff;--on-primary:#ffffff;--danger:#dc2626;
+  --s-open:#64748b;--s-progress:#2563eb;--s-review:#d97706;--s-hold:#7c3aed;--s-done:#059669;--s-cancel:#94a3b8;
+  --p-high:#dc2626;--p-med:#d97706;--p-low:#64748b;
+  --shadow:0 1px 2px rgb(15 23 42/.05),0 1px 3px rgb(15 23 42/.06);
+  --shadow-lg:0 10px 30px rgb(15 23 42/.12),0 2px 6px rgb(15 23 42/.06);
+  --font:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0b1220;--panel:#111a2e;--side:#0d1526;--line:#1e293b;--line-2:#334155;--fg:#e2e8f0;--muted:#94a3b8;--faint:#64748b;
+  --primary:#60a5fa;--primary-soft:#172554;--on-primary:#0b1220;--danger:#f87171;
+  --s-open:#94a3b8;--s-progress:#60a5fa;--s-review:#fbbf24;--s-hold:#a78bfa;--s-done:#34d399;--s-cancel:#64748b;
+  --p-high:#f87171;--p-med:#fbbf24;--p-low:#94a3b8;
+  --shadow:0 1px 2px rgb(0 0 0/.3);--shadow-lg:0 12px 32px rgb(0 0 0/.45);color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--primary);outline-offset:2px;border-radius:6px}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.shell{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100%}
+.side{background:var(--side);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:18px;position:sticky;top:0;height:100vh;overflow-y:auto}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px;font-weight:700;font-size:15px}
+.brand .logo{width:28px;height:28px;border-radius:8px;background:var(--primary);color:var(--on-primary);display:grid!important;place-items:center}
+.nav{display:grid;gap:2px}
+.nav-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);padding:0 8px 4px}
+.nav button{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:6px 8px;border:0;border-radius:8px;background:none;color:var(--muted);text-align:left;font-weight:500;transition:background .15s,color .15s}
+.nav button:hover{background:var(--panel);color:var(--fg)}
+.nav button[aria-current="true"]{background:var(--panel);color:var(--fg);box-shadow:var(--shadow)}
+.nav .count{margin-left:auto;font:500 11px var(--mono);color:var(--faint)}
+.tree-area{font-size:12px;font-weight:600;color:var(--fg)!important;margin-top:6px}
+.tree-area svg{color:var(--faint)}
+.tree-proj{padding-left:32px!important;font-size:13px;min-height:32px!important}
+.dot{width:8px;height:8px;border-radius:2px;flex:none;background:hsl(var(--h) 60% 50%)}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:12px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.01em}
+.top .sub{color:var(--muted);font-size:13px}
+.spacer{flex:1}
+.search{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:0 10px;min-height:36px;color:var(--muted)}
+.search input{border:0;background:none;outline:none;width:180px;color:var(--fg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;min-width:36px;padding:6px 12px;border:1px solid var(--line);background:var(--panel);border-radius:8px;font-weight:500;transition:border-color .15s,background .15s}
+.btn:hover{border-color:var(--line-2)}
+.btn.icon{padding:6px}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.btn.danger{color:var(--danger)}
+.btn.danger.armed{background:var(--danger);border-color:var(--danger);color:#fff}
+.range{font:500 13px var(--mono);min-width:13ch;text-align:center}
+.chip-filter{display:inline-flex;align-items:center;gap:6px;background:var(--primary-soft);color:var(--primary);border-radius:99px;padding:4px 6px 4px 10px;font-size:12px;font-weight:600}
+.chip-filter button{border:0;background:none;color:inherit;display:grid;place-items:center;padding:2px;border-radius:99px}
+.content{padding:20px 24px 48px;display:grid;gap:20px;align-content:start}
+.banner{background:var(--primary-soft);border:1px solid color-mix(in srgb,var(--primary) 30%,transparent);border-radius:var(--r);padding:10px 14px;font-size:13px}
+
+.tiles{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow)}
+.tile .k{font-size:12px;color:var(--muted);font-weight:500}
+.tile .v{font:600 26px/1.2 var(--mono);margin-top:4px;font-variant-numeric:tabular-nums}
+.tile.warn .v{color:var(--danger)}
+
+.section{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);min-width:0}
+.section > header{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.section > header h2{font-size:14px;margin:0;font-weight:600}
+.section > header .n{font:500 12px var(--mono);color:var(--faint)}
+.section.warn > header h2{color:var(--danger)}
+.empty{color:var(--muted);font-size:13px;padding:14px 16px;margin:0}
+.list{list-style:none;margin:0;padding:0}
+.group-h{display:flex;align-items:center;gap:8px;padding:12px 16px 4px;font-size:12px;font-weight:600;color:var(--muted)}
+.row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto auto;gap:12px;align-items:center;padding:8px 16px;border-top:1px solid var(--line);transition:background .12s}
+.list > .row:first-child,.group-h + .row{border-top:0}
+.row:hover{background:color-mix(in srgb,var(--primary) 4%,var(--panel))}
+.row .t{min-width:0;cursor:pointer;border:0;background:none;text-align:left;padding:2px 0}
+.row .title{font-weight:500;overflow-wrap:anywhere}
+.row .desc{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.closed .title{color:var(--muted);text-decoration:line-through}
+.proj-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+.due{font:500 12px var(--mono);color:var(--muted);white-space:nowrap;min-width:52px;text-align:right}
+.due.late{color:var(--danger)}
+.pri{display:inline-flex;align-items:flex-end;gap:2px;height:14px;width:16px;flex:none}
+.pri i{display:block;width:3px;border-radius:1px;background:var(--line-2)}
+.pri i:nth-child(1){height:5px}.pri i:nth-child(2){height:9px}.pri i:nth-child(3){height:13px}
+.pri.high i{background:var(--p-high)}.pri.med i:nth-child(-n+2){background:var(--p-med)}.pri.low i:nth-child(1){background:var(--p-low)}
+
+.st{appearance:none;-webkit-appearance:none;border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 22px;font-size:12px;font-weight:600;min-height:28px;cursor:pointer;color:var(--c);
+  background:var(--panel) radial-gradient(circle at 11px 50%,var(--c) 0 4px,transparent 4.5px)}
+.st[data-s="open"]{--c:var(--s-open)}.st[data-s="in_progress"]{--c:var(--s-progress)}.st[data-s="in_review"]{--c:var(--s-review)}
+.st[data-s="on_hold"]{--c:var(--s-hold)}.st[data-s="done"]{--c:var(--s-done)}.st[data-s="cancelled"]{--c:var(--s-cancel)}
+.st option{color:var(--fg);background:var(--panel)}
+
+.board{display:grid;grid-template-columns:repeat(5,minmax(240px,1fr));gap:12px;overflow-x:auto;padding-bottom:6px;align-items:start}
+.col{background:var(--side);border:1px solid var(--line);border-radius:var(--r);padding:10px;display:grid;gap:8px;min-width:0}
+.col > h3{display:flex;align-items:center;gap:8px;margin:0;padding:2px 4px;font-size:13px}
+.col > h3 .n{margin-left:auto;font:500 12px var(--mono);color:var(--faint)}
+.sdot{width:10px;height:10px;border-radius:50%;background:var(--c);flex:none;display:inline-block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;box-shadow:var(--shadow);transition:border-color .15s}
+.card:hover{border-color:var(--line-2)}
+.card .t{border:0;background:none;text-align:left;padding:0;font-weight:500;cursor:pointer;overflow-wrap:anywhere}
+.card .meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between}
+.card .st{justify-self:start}
+.card.closed{opacity:.6}
+.more{font-size:12px;color:var(--muted);text-align:center;padding:4px;margin:0}
+
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
+.day{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:10px;display:grid;gap:8px;align-content:start;min-height:200px;min-width:0;box-shadow:var(--shadow)}
+.day.today{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+.day > button{display:flex;justify-content:space-between;align-items:baseline;border:0;background:none;padding:0;cursor:pointer}
+.day > button b{font-size:13px}.day > button span{font:500 12px var(--mono);color:var(--muted)}
+.day .card{padding:8px;gap:4px;font-size:13px;box-shadow:none}
+.month{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--line);gap:1px}
+.dow{background:var(--side);font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:8px 10px}
+.cell{background:var(--panel);min-height:110px;padding:8px;display:grid;gap:4px;align-content:start;border:0;text-align:left;cursor:pointer;min-width:0}
+.cell:hover{background:color-mix(in srgb,var(--primary) 4%,var(--panel))}
+.cell.out{background:var(--bg);color:var(--faint)}
+.cell .n{font:500 12px var(--mono)}
+.cell.today .n{background:var(--primary);color:var(--on-primary);border-radius:99px;width:24px;height:24px;display:grid;place-items:center}
+.mini{font-size:11px;padding:2px 6px;border-radius:4px;background:color-mix(in srgb,hsl(var(--h) 60% 50%) 14%,transparent);border-left:2px solid hsl(var(--h) 60% 50%);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini.closed{opacity:.5;text-decoration:line-through}
+
+.area-block{display:grid;gap:12px}
+.area-block > h2{display:flex;align-items:baseline;gap:10px;margin:0;font-size:16px}
+.area-block > h2 span{font-size:12px;font-weight:500;color:var(--muted)}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.pcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:grid;gap:10px;align-content:start;box-shadow:var(--shadow);text-align:left;cursor:pointer;transition:border-color .15s,box-shadow .15s}
+.pcard:hover{border-color:var(--line-2);box-shadow:var(--shadow-lg)}
+.pcard h3{margin:0;font-size:14px;display:flex;align-items:center;gap:8px}
+.pcard p{margin:0;font-size:12px;color:var(--muted)}
+.bar{display:flex;height:6px;border-radius:99px;overflow:hidden;background:var(--line)}
+.bar i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend .sdot{width:7px;height:7px}
+
+.two{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:20px;align-items:start}
+.log{padding:12px 16px;border-top:1px solid var(--line);display:grid;gap:4px}
+.log:first-of-type{border-top:0}
+.log p{margin:0;font-size:13px}
+.log details{font-size:12px;color:var(--muted);white-space:pre-wrap}
+.log summary{cursor:pointer}
+
+.scrim{position:fixed;inset:0;background:rgb(15 23 42/.35);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--panel);border-left:1px solid var(--line);box-shadow:var(--shadow-lg);z-index:21;display:flex;flex-direction:column;animation:slide .2s ease-out}
+@keyframes slide{from{transform:translateX(24px);opacity:.4}}
+.drawer header{display:flex;align-items:center;gap:8px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.drawer header h2{margin:0;font-size:15px;flex:1}
+.drawer form{padding:18px;display:grid;gap:14px;overflow-y:auto;flex:1;align-content:start}
+.field{display:grid;gap:6px}
+.field label{font-size:12px;font-weight:600;color:var(--muted)}
+.field input,.field select,.field textarea{border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:8px 10px;min-height:38px}
+.field textarea{min-height:110px;resize:vertical}
+.field.title input{font-size:16px;font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.drawer footer{display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--line)}
+
+.gate{max-width:360px;margin:14vh auto 0;padding-inline:16px;display:grid;gap:12px}
+.gate h1{margin:0;font-size:22px}
+.gate input{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:10px 12px;min-height:42px}
+.err{color:var(--danger);font-size:13px}
+
+.mobile-nav{display:none}
+@media (max-width:1100px){.tiles{grid-template-columns:repeat(3,minmax(0,1fr))}.two{grid-template-columns:1fr}}
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}.side{display:none}
+  .mobile-nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--side)}
+  .mobile-nav button{flex:none;border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:6px 14px;min-height:36px;font-weight:500;color:var(--muted)}
+  .mobile-nav button[aria-current="true"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+  .top,.content{padding-inline:16px}
+  .week{grid-template-columns:1fr}.day{min-height:0}
+  .search input{width:120px}
+}
+@media (max-width:600px){
+  .tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .row{grid-template-columns:auto minmax(0,1fr) auto;row-gap:4px}
+  .row .proj-chip{grid-column:2;grid-row:2}
+  .row .pri{display:none}
+  .cell{min-height:58px}.cell .mini{display:none}
+  .grid2{grid-template-columns:1fr}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<form class="gate" id="gate" hidden>
+  <h1>Voice Daybook</h1>
+  <label for="key" class="sub">Dashboard key</label>
+  <input id="key" type="password" autocomplete="current-password" required>
+  <button class="btn primary">Open dashboard</button>
+  <span class="err" id="gateErr"></span>
+</form>
+
+<div class="shell" id="app" hidden>
+  <aside class="side" aria-label="Navigation">
+    <div class="brand"><span class="logo" data-icon="mic"></span>Voice Daybook</div>
+    <nav class="nav" id="views"></nav>
+    <nav class="nav" id="tree" aria-label="Areas and projects"></nav>
+  </aside>
+  <div class="main">
+    <div class="mobile-nav" id="mviews"></div>
+    <header class="top">
+      <div><h1 id="viewTitle"></h1><div class="sub" id="viewSub"></div></div>
+      <span id="filterChip"></span>
+      <div class="spacer"></div>
+      <label class="search"><span data-icon="search"></span><input id="q" type="search" placeholder="Search tasks" aria-label="Search tasks"></label>
+      <div id="dateNav" style="display:flex;gap:6px;align-items:center">
+        <button class="btn icon" id="prev" aria-label="Previous"><span data-icon="left"></span></button>
+        <span class="range" id="range"></span>
+        <button class="btn icon" id="next" aria-label="Next"><span data-icon="right"></span></button>
+        <button class="btn" id="todayBtn">Today</button>
+      </div>
+    </header>
+    <main class="content">
+      <div class="banner" id="banner" hidden>Preview from your Zoho export. Changes stay in this tab until the backend is connected.</div>
+      <div id="view" style="display:grid;gap:20px"></div>
+    </main>
+  </div>
+</div>
+<div id="drawerRoot"></div>
+
+<script>
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2, "0");
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const parse = s => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const weekStart = d => addDays(d, -((d.getDay() + 6) % 7));
+const hue = s => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 11);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const fmt = (d, o) => d.toLocaleDateString("en-IN", o);
+const short = s => fmt(parse(s), { day: "numeric", month: "short" });
+const today = () => iso(new Date());
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+
+const ICONS = {
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
+  board: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 7v7M12 7v4M16 7v9"/>',
+  week: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M9 10v11M15 10v11M8 2v4M16 2v4"/>',
+  month: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+  left: '<path d="m15 18-6-6 6-6"/>', right: '<path d="m9 18 6-6-6-6"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  layers: '<path d="m12 2 10 5-10 5L2 7Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+};
+const icon = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
+
+const STATUS = [["open", "Open"], ["in_progress", "In progress"], ["in_review", "In review"], ["on_hold", "On hold"], ["done", "Done"], ["cancelled", "Cancelled"]];
+const SLABEL = Object.fromEntries(STATUS);
+const SVAR = { open: "--s-open", in_progress: "--s-progress", in_review: "--s-review", on_hold: "--s-hold", done: "--s-done", cancelled: "--s-cancel" };
+const PRI = { high: 0, med: 1, low: 2 };
+const SORDER = { in_progress: 0, in_review: 1, open: 2, on_hold: 3, done: 4, cancelled: 5 };
+const VIEWS = [["today", "Today", "sun"], ["backlog", "Backlog", "inbox"], ["board", "Board", "board"], ["week", "Week", "week"], ["month", "Month", "month"], ["projects", "Projects", "folder"]];
+
+const S = { projects: [], tasks: [], logs: [], view: store.get("vd-view2") || "today", cursor: new Date(), filter: null, q: "", key: store.get("vd-key") || "", preview: false, editing: null };
+const closed = t => t.status === "done" || t.status === "cancelled";
+const areaOf = name => (S.projects.find(p => p.name === name) || {}).area || "General";
+const visible = () => S.tasks.filter(t =>
+  (!S.filter || t.project === S.filter || areaOf(t.project) === S.filter) &&
+  (!S.q || (t.title + " " + t.description + " " + t.project).toLowerCase().includes(S.q)));
+const sortTasks = a => a.slice().sort((x, y) => (SORDER[x.status] ?? 2) - (SORDER[y.status] ?? 2) || (PRI[x.priority] ?? 1) - (PRI[y.priority] ?? 1) || (x.date || "9").localeCompare(y.date || "9") || x.title.localeCompare(y.title));
+
+/* ---------- data ---------- */
+async function api(path, opts = {}) {
+  const r = await fetch("/api/" + path, { ...opts, headers: { "X-Key": S.key, "Content-Type": "application/json" } });
+  if (r.status === 401) { showGate("Wrong key."); throw new Error("401"); }
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+function showGate(msg) { $("#app").hidden = true; $("#gate").hidden = false; $("#gateErr").textContent = msg || ""; }
+$("#gate").onsubmit = e => { e.preventDefault(); S.key = $("#key").value; store.set("vd-key", S.key); load(); };
+
+async function load() {
+  let d;
+  try {
+    if (!S.key) throw new Error("no key");
+    d = await api("data"); S.preview = false;
+  } catch (e) {
+    if (e.message === "401") return;
+    const r = await fetch("seed.json").catch(() => null);  // local preview before the backend exists
+    if (!r || !r.ok) return showGate(S.key ? "Can't reach the server." : "");
+    d = await r.json(); S.preview = true;
+  }
+  for (const t of d.tasks) t.status ||= t.done ? "done" : "open";
+  Object.assign(S, d);
+  $("#banner").hidden = !S.preview;
+  $("#gate").hidden = true; $("#app").hidden = false;
+  render();
+}
+async function save(id, patch) {
+  const t = S.tasks.find(x => x.id === id);
+  if (!S.preview) await api("tasks/" + id, { method: "PATCH", body: JSON.stringify(patch) });
+  Object.assign(t, patch);
+  t.done = closed(t);
+  render();
+}
+async function remove(id) {
+  if (!S.preview) await api("tasks/" + id, { method: "DELETE" });
+  S.tasks = S.tasks.filter(x => x.id !== id);
+  render();
+}
+
+/* ---------- pieces ---------- */
+const statusSelect = t => `<select class="st" data-s="${t.status}" data-id="${t.id}" aria-label="Status">${STATUS.map(([v, l]) => `<option value="${v}"${v === t.status ? " selected" : ""}>${l}</option>`).join("")}</select>`;
+const priBars = p => `<span class="pri ${esc(p)}" title="${esc(p)} priority" role="img" aria-label="${esc(p)} priority"><i></i><i></i><i></i></span>`;
+const projChip = name => `<span class="proj-chip"><span class="dot" style="--h:${hue(name)}"></span>${esc(name)}</span>`;
+const dueLabel = t => !t.date ? `<span class="due">—</span>` : `<span class="due${!closed(t) && t.date < today() ? " late" : ""}">${short(t.date)}</span>`;
+
+const row = t => `<li class="row${closed(t) ? " closed" : ""}">${statusSelect(t)}
+  <button class="t" data-open="${t.id}"><div class="title">${esc(t.title)}</div>${t.description ? `<div class="desc">${esc(t.description)}</div>` : ""}</button>
+  ${projChip(t.project)}${priBars(t.priority)}${dueLabel(t)}</li>`;
+
+const card = (t, opts = {}) => `<div class="card${closed(t) ? " closed" : ""}">
+  <button class="t" data-open="${t.id}">${esc(t.title)}</button>
+  <div class="meta">${projChip(t.project)}${opts.compact ? "" : `<span style="display:flex;gap:8px;align-items:center">${priBars(t.priority)}${dueLabel(t)}</span>`}</div>
+  ${opts.status ? statusSelect(t) : ""}</div>`;
+
+function section(title, list, { warn, groupBy, empty = "Nothing here." } = {}) {
+  let body;
+  if (!list.length) body = `<p class="empty">${empty}</p>`;
+  else if (groupBy) {
+    const g = {};
+    for (const t of list) (g[t.project] ||= []).push(t);
+    body = `<ul class="list">${Object.keys(g).sort().map(p => `<li class="group-h"><span class="dot" style="--h:${hue(p)}"></span>${esc(p)} · ${g[p].length}</li>${sortTasks(g[p]).map(row).join("")}`).join("")}</ul>`;
+  } else body = `<ul class="list">${sortTasks(list).map(row).join("")}</ul>`;
+  return `<section class="section${warn ? " warn" : ""}"><header><h2>${title}</h2><span class="n">${list.length}</span></header>${body}</section>`;
+}
+
+/* ---------- views ---------- */
+function todayView() {
+  const all = visible(), d = iso(S.cursor), t0 = today(), isToday = d === t0;
+  const open = all.filter(t => !closed(t)), ws = iso(weekStart(new Date()));
+  const overdue = isToday ? open.filter(t => t.date && t.date < d) : [];
+  const due = all.filter(t => t.date === d);
+  const active = open.filter(t => (t.status === "in_progress" || t.status === "in_review") && t.date !== d);
+  const logs = S.logs.filter(l => iso(new Date(l.created_at)) === d);
+  const tiles = [["Due today", open.filter(t => t.date === t0).length], ["Overdue", open.filter(t => t.date && t.date < t0).length, "warn"],
+    ["In progress", open.filter(t => t.status === "in_progress").length], ["Backlog", open.filter(t => !t.date).length],
+    ["Done this week", all.filter(t => t.status === "done" && t.date >= ws).length]];
+  return `<div class="tiles">${tiles.map(([k, v, c]) => `<div class="tile${c && v ? " " + c : ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
+  <div class="two"><div style="display:grid;gap:20px;min-width:0">
+    ${overdue.length ? section("Overdue", overdue, { warn: true }) : ""}
+    ${section(isToday ? "Due today" : "Due " + fmt(S.cursor, { weekday: "long", day: "numeric", month: "short" }), due, { empty: "Nothing scheduled. Send the bot a voice note to plan this day." })}
+    ${isToday ? section("In progress & in review", active, { groupBy: true }) : ""}
+  </div>
+  <section class="section"><header><h2>Voice & text notes</h2><span class="n">${logs.length}</span></header>
+    ${logs.length ? logs.map(l => `<div class="log"><p>${esc(l.summary)}</p><details><summary>${new Date(l.created_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} · ${l.count} tasks · transcript</summary>${esc(l.text)}</details></div>`).join("")
+      : `<p class="empty">Notes you confirm in Telegram show up here with their transcript.</p>`}</section></div>`;
+}
+
+function backlogView() {
+  return section("Unscheduled open tasks", visible().filter(t => !closed(t) && !t.date), { groupBy: true, empty: "Backlog is clear." });
+}
+
+function boardView() {
+  const all = visible(), cols = ["open", "in_progress", "in_review", "on_hold", "done"];
+  return `<div class="board">${cols.map(c => {
+    let list = all.filter(t => t.status === c || (c === "done" && t.status === "cancelled"));
+    const total = list.length;
+    list = c === "done" ? list.sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 25) : sortTasks(list);
+    return `<section class="col" style="--c:var(${SVAR[c]})"><h3><span class="sdot"></span>${SLABEL[c]}<span class="n">${total}</span></h3>
+      ${list.map(t => card(t, { status: true })).join("") || `<p class="more">No tasks</p>`}
+      ${total > list.length ? `<p class="more">Latest ${list.length} of ${total}</p>` : ""}</section>`;
+  }).join("")}</div>`;
+}
+
+function weekView() {
+  const s = weekStart(S.cursor), all = visible();
+  return `<div class="week">${[...Array(7)].map((_, i) => {
+    const d = addDays(s, i), k = iso(d), list = sortTasks(all.filter(t => t.date === k));
+    return `<div class="day${k === today() ? " today" : ""}"><button data-goto="${k}"><b>${fmt(d, { weekday: "short" })}</b><span>${fmt(d, { day: "numeric", month: "short" })}</span></button>
+      ${list.map(t => card(t, { compact: true })).join("") || `<span class="more">—</span>`}</div>`;
+  }).join("")}</div>`;
+}
+
+function monthView() {
+  const first = new Date(S.cursor.getFullYear(), S.cursor.getMonth(), 1), s = weekStart(first), all = visible();
+  const head = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(x => `<div class="dow">${x}</div>`).join("");
+  return `<div class="month">${head}${[...Array(42)].map((_, i) => {
+    const d = addDays(s, i), k = iso(d), list = sortTasks(all.filter(t => t.date === k));
+    return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-goto="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${list.length} tasks">
+      <span class="n">${d.getDate()}</span>${list.slice(0, 3).map(t => `<span class="mini${closed(t) ? " closed" : ""}" style="--h:${hue(t.project)}">${esc(t.title)}</span>`).join("")}
+      ${list.length > 3 ? `<span class="more" style="text-align:left;padding:0">+${list.length - 3} more</span>` : ""}</button>`;
+  }).join("")}</div>`;
+}
+
+function projectsView() {
+  const areas = {};
+  for (const p of S.projects) if (!S.filter || p.name === S.filter || p.area === S.filter) (areas[p.area || "General"] ||= []).push(p);
+  if (!Object.keys(areas).length) return `<section class="section"><p class="empty">Projects appear after you tap Proceed on a draft in Telegram.</p></section>`;
+  return Object.keys(areas).sort().map(a => {
+    const ps = areas[a].sort((x, y) => x.name.localeCompare(y.name));
+    const openN = S.tasks.filter(t => !closed(t) && ps.some(p => p.name === t.project)).length;
+    return `<section class="area-block"><h2>${esc(a)}<span>${ps.length} projects · ${openN} open</span></h2><div class="pgrid">${ps.map(p => {
+      const list = S.tasks.filter(t => t.project === p.name), n = list.length || 1;
+      const by = Object.fromEntries(STATUS.map(([s]) => [s, list.filter(t => t.status === s).length]));
+      const pct = Math.round((by.done + by.cancelled) / n * 100);
+      return `<button class="pcard" data-filter="${esc(p.name)}" data-then="board">
+        <h3><span class="dot" style="--h:${hue(p.name)}"></span>${esc(p.name)}<span style="margin-left:auto;font:500 12px var(--mono);color:var(--muted)">${list.length ? pct + "%" : "—"}</span></h3>
+        ${p.description ? `<p>${esc(p.description)}</p>` : ""}
+        <div class="bar" role="img" aria-label="${pct}% closed">${STATUS.map(([s]) => by[s] ? `<i style="width:${by[s] / n * 100}%;background:var(${SVAR[s]})"></i>` : "").join("")}</div>
+        <div class="legend">${STATUS.filter(([s]) => by[s]).map(([s, l]) => `<span><span class="sdot" style="--c:var(${SVAR[s]})"></span>${by[s]} ${l.toLowerCase()}</span>`).join("")}</div>
+      </button>`;
+    }).join("")}</div></section>`;
+  }).join("");
+}
+
+/* ---------- shell ---------- */
+function render() {
+  const open = S.tasks.filter(t => !closed(t)), counts = {
+    today: open.filter(t => t.date && t.date <= today()).length, backlog: open.filter(t => !t.date).length,
+    board: open.length, projects: S.projects.length };
+  $("#views").innerHTML = `<div class="nav-label">Views</div>` + VIEWS.map(([v, l, ic]) =>
+    `<button data-view="${v}" aria-current="${S.view === v}">${icon(ic)}${l}<span class="count">${counts[v] || ""}</span></button>`).join("");
+  $("#mviews").innerHTML = VIEWS.map(([v, l]) => `<button data-view="${v}" aria-current="${S.view === v}">${l}</button>`).join("");
+
+  const areas = {};
+  for (const p of S.projects) (areas[p.area || "General"] ||= []).push(p);
+  $("#tree").innerHTML = `<div class="nav-label">Areas</div>` + Object.keys(areas).sort().map(a =>
+    `<button class="tree-area" data-filter="${esc(a)}" aria-current="${S.filter === a}">${icon("layers")}${esc(a)}</button>` +
+    areas[a].sort((x, y) => x.name.localeCompare(y.name)).map(p =>
+      `<button class="tree-proj" data-filter="${esc(p.name)}" aria-current="${S.filter === p.name}"><span class="dot" style="--h:${hue(p.name)}"></span>${esc(p.name)}<span class="count">${open.filter(t => t.project === p.name).length || ""}</span></button>`).join("")
+  ).join("");
+
+  const c = S.cursor, s = weekStart(c);
+  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects" }[S.view];
+  $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  $("#dateNav").style.display = ["today", "week", "month"].includes(S.view) ? "flex" : "none";
+  $("#range").textContent = S.view === "today" ? fmt(c, { day: "numeric", month: "short", year: "numeric" })
+    : S.view === "week" ? `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(addDays(s, 6), { day: "numeric", month: "short" })}` : fmt(c, { month: "long", year: "numeric" });
+  $("#filterChip").innerHTML = S.filter ? `<span class="chip-filter">${esc(S.filter)}<button data-clear aria-label="Clear filter">${icon("x")}</button></span>` : "";
+  $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, week: weekView, month: monthView, projects: projectsView }[S.view]();
+}
+
+/* ---------- drawer ---------- */
+function openDrawer(id) {
+  const t = S.tasks.find(x => x.id === id); if (!t) return;
+  const areas = {};
+  for (const p of S.projects) (areas[p.area || "General"] ||= []).push(p.name);
+  $("#drawerRoot").innerHTML = `<div class="scrim" data-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <header><h2 id="dTitle">Edit task</h2><button class="btn icon" data-close aria-label="Close">${icon("x")}</button></header>
+    <form id="dForm">
+      <div class="field title"><label for="f-title">Title</label><input id="f-title" name="title" value="${esc(t.title)}" required></div>
+      <div class="grid2">
+        <div class="field"><label for="f-status">Status</label><select id="f-status" name="status">${STATUS.map(([v, l]) => `<option value="${v}"${v === t.status ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+        <div class="field"><label for="f-priority">Priority</label><select id="f-priority" name="priority">${[["high", "High"], ["med", "Medium"], ["low", "Low"]].map(([v, l]) => `<option value="${v}"${v === t.priority ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+        <div class="field"><label for="f-date">Due date</label><input id="f-date" name="date" type="date" value="${t.date || ""}"></div>
+        <div class="field"><label for="f-project">Project</label><select id="f-project" name="project">${Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}">${areas[a].sort().map(n => `<option${n === t.project ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
+      </div>
+      <div class="field"><label for="f-desc">Description</label><textarea id="f-desc" name="description">${esc(t.description)}</textarea></div>
+      <span class="err" id="dErr"></span>
+    </form>
+    <footer><button class="btn danger" id="dDel" type="button">Delete</button><div class="spacer"></div>
+      <button class="btn" data-close type="button">Cancel</button><button class="btn primary" form="dForm">Save</button></footer>
+  </aside>`;
+  S.editing = id;
+  $("#f-title").focus();
+  $("#dForm").onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target)), patch = {};
+    for (const k of ["title", "status", "priority", "project", "description"]) if (f[k] !== (t[k] ?? "")) patch[k] = f[k];
+    if ((f.date || null) !== (t.date || null)) patch.date = f.date || null;
+    try { if (Object.keys(patch).length) await save(id, patch); closeDrawer(); }
+    catch { $("#dErr").textContent = "Couldn't save. Check your connection and try again."; }
+  };
+  $("#dDel").onclick = async e => {
+    if (!e.target.classList.contains("armed")) { e.target.classList.add("armed"); e.target.textContent = "Confirm delete"; return; }
+    try { await remove(id); closeDrawer(); } catch { $("#dErr").textContent = "Couldn't delete. Try again."; }
+  };
+}
+function closeDrawer() { $("#drawerRoot").innerHTML = ""; S.editing = null; }
+document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing) closeDrawer(); });
+
+/* ---------- events ---------- */
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close]");
+  if (!el) return;
+  if (el.dataset.view) { S.view = el.dataset.view; store.set("vd-view2", S.view); }
+  else if (el.dataset.filter !== undefined) { S.filter = S.filter === el.dataset.filter && !el.dataset.then ? null : el.dataset.filter; if (el.dataset.then) S.view = el.dataset.then; }
+  else if (el.hasAttribute("data-clear")) S.filter = null;
+  else if (el.dataset.goto) { S.cursor = parse(el.dataset.goto); S.view = "today"; }
+  else if (el.dataset.open) return openDrawer(Number(el.dataset.open));
+  else if (el.hasAttribute("data-close")) return closeDrawer();
+  render();
+});
+document.addEventListener("change", async e => {
+  if (!e.target.matches("select.st")) return;
+  try { await save(Number(e.target.dataset.id), { status: e.target.value }); } catch { load(); }
+});
+$("#q").addEventListener("input", e => { S.q = e.target.value.trim().toLowerCase(); render(); });
+function shift(n) {
+  const c = S.cursor;
+  S.cursor = S.view === "today" ? addDays(c, n) : S.view === "week" ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
+  render();
+}
+$("#prev").onclick = () => shift(-1);
+$("#next").onclick = () => shift(1);
+$("#todayBtn").onclick = () => { S.cursor = new Date(); render(); };
+document.addEventListener("visibilitychange", () => { if (!document.hidden && S.key && !S.preview && !S.editing) load().catch(() => {}); });
+
+document.querySelectorAll("[data-icon]").forEach(el => { el.innerHTML = icon(el.dataset.icon); el.style.display = "inline-flex"; });
+load().catch(() => {});
+</script>
+</body>
+</html>
