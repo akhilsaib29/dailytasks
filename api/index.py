@@ -254,7 +254,8 @@ def telegram(update: dict, x_telegram_bot_api_secret_token: str = Header("")):
 
 
 def check(key):
-    if not E("DASHBOARD_KEY") or key != E("DASHBOARD_KEY"):
+    want = E("DASHBOARD_KEY").strip()  # a stray space pasted into Vercel shouldn't lock you out
+    if not want or key.strip() != want:
         raise HTTPException(401)
 
 
