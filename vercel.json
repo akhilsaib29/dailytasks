@@ -1,4 +1,4 @@
 {
-  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }],
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index?__path=$1" }],
   "functions": { "api/index.py": { "maxDuration": 60 } }
 }

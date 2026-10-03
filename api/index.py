@@ -296,6 +296,15 @@ def setup(key: str, request: Request):
               allowed_updates=["message", "callback_query"])
 
 
+@app.middleware("http")
+async def vercel_path(request: Request, call_next):
+    # Vercel's rewrite hands every call over as /api/index; vercel.json passes the real path in ?__path=
+    real = request.query_params.get("__path")
+    if real is not None and request.url.path == "/api/index":
+        request.scope["path"] = "/api/" + real
+    return await call_next(request)
+
+
 @app.exception_handler(404)
 def not_found(request: Request, exc):
     from fastapi.responses import JSONResponse
