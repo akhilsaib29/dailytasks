@@ -11,7 +11,7 @@
 :root{
   --bg:#f8fafc;--panel:#ffffff;--side:#f1f5f9;--line:#e2e8f0;--line-2:#cbd5e1;--fg:#0f172a;--muted:#64748b;--faint:#94a3b8;
   --primary:#2563eb;--primary-soft:#eff6ff;--on-primary:#ffffff;--danger:#dc2626;
-  --s-open:#dc2626;--s-progress:#2563eb;--s-review:#0891b2;--s-hold:#7c3aed;--s-done:#059669;--s-cancel:#ca8a04;
+  --s-open:#dc2626;--s-progress:#2563eb;--s-review:#ea580c;--s-hold:#7c3aed;--s-done:#059669;--s-cancel:#eab308;
   --p-high:#dc2626;--p-med:#d97706;--p-low:#64748b;
   --shadow:0 1px 2px rgb(15 23 42/.05),0 1px 3px rgb(15 23 42/.06);
   --shadow-lg:0 10px 30px rgb(15 23 42/.12),0 2px 6px rgb(15 23 42/.06);
@@ -22,7 +22,7 @@
 @media (prefers-color-scheme:dark){:root{
   --bg:#0b1220;--panel:#111a2e;--side:#0d1526;--line:#1e293b;--line-2:#334155;--fg:#e2e8f0;--muted:#94a3b8;--faint:#64748b;
   --primary:#60a5fa;--primary-soft:#172554;--on-primary:#0b1220;--danger:#f87171;
-  --s-open:#f87171;--s-progress:#60a5fa;--s-review:#22d3ee;--s-hold:#a78bfa;--s-done:#34d399;--s-cancel:#facc15;
+  --s-open:#f87171;--s-progress:#60a5fa;--s-review:#fb923c;--s-hold:#a78bfa;--s-done:#34d399;--s-cancel:#facc15;
   --p-high:#f87171;--p-med:#fbbf24;--p-low:#94a3b8;
   --shadow:0 1px 2px rgb(0 0 0/.3);--shadow-lg:0 12px 32px rgb(0 0 0/.45);color-scheme:dark}}
 *{box-sizing:border-box}
@@ -97,7 +97,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .pri i:nth-child(1){height:5px}.pri i:nth-child(2){height:9px}.pri i:nth-child(3){height:13px}
 .pri.high i{background:var(--p-high)}.pri.med i:nth-child(-n+2){background:var(--p-med)}.pri.low i:nth-child(1){background:var(--p-low)}
 
-.st{appearance:none;-webkit-appearance:none;border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 22px;font-size:12px;font-weight:600;min-height:28px;cursor:pointer;color:var(--c);
+.st{appearance:none;-webkit-appearance:none;border:1px solid var(--line);border-radius:99px;padding:3px 10px 3px 22px;font-size:12px;font-weight:600;min-height:28px;cursor:pointer;color:var(--fg);
   background:var(--panel) radial-gradient(circle at 11px 50%,var(--c) 0 4px,transparent 4.5px)}
 .st[data-s="open"]{--c:var(--s-open)}.st[data-s="in_progress"]{--c:var(--s-progress)}.st[data-s="in_review"]{--c:var(--s-review)}
 .st[data-s="on_hold"]{--c:var(--s-hold)}.st[data-s="done"]{--c:var(--s-done)}.st[data-s="cancelled"]{--c:var(--s-cancel)}
@@ -196,6 +196,20 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;min-height:36px}
 .toggle input{accent-color:var(--primary);width:16px;height:16px}
 
+/* status filter */
+.filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.filters .lbl{font-size:12px;font-weight:600;color:var(--muted);margin-right:4px}
+.sf{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:4px 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel);font-size:12px;font-weight:600;color:var(--muted);transition:background .15s,border-color .15s,color .15s}
+.sf .sdot{width:8px;height:8px;opacity:.35}
+.sf[aria-pressed="true"]{color:var(--fg);border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--panel))}
+.sf[aria-pressed="true"] .sdot{opacity:1}
+.sf.preset{color:var(--primary);border-style:dashed}
+.sep{width:1px;height:20px;background:var(--line);margin:0 4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--panel)}
+.seg button{border:0;background:none;padding:6px 12px;min-height:34px;font-size:12px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--primary-soft);color:var(--primary)}
+.mselect{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 10px;min-height:36px;font-size:13px;max-width:240px}
+
 /* tree */
 .tree{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
 .trow{display:grid;grid-template-columns:20px minmax(0,1fr) 160px 52px 64px;gap:12px;align-items:center;width:100%;border:0;background:none;text-align:left;padding:10px 16px;border-top:1px solid var(--line);transition:background .12s}
@@ -216,7 +230,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .tkids .empty{padding-left:76px}
 
 /* map */
-.map-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;height:calc(100vh - 170px);min-height:480px}
+.map-wrap{position:relative;height:calc(100vh - 230px)!important;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;height:calc(100vh - 170px);min-height:480px}
 #map{width:100%;height:100%;display:block;cursor:grab}
 #map:active{cursor:grabbing}
 .map-tools{position:absolute;top:12px;left:12px;right:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;pointer-events:none}
@@ -334,11 +348,13 @@ const S = { projects: [], tasks: [], logs: [], view: store.get("vd-view2") || "t
 const hashKey = new URLSearchParams(location.hash.slice(1)).get("key");
 if (hashKey) { S.key = hashKey; store.set("vd-key", hashKey); }
 S.expanded = new Set(JSON.parse(store.get("vd-expanded") || "null") || []);
-S.showClosed = store.get("vd-closed") === "1";
+const ACTIVE_S = ["open", "in_progress", "in_review", "on_hold"];
+S.statuses = new Set(JSON.parse(store.get("vd-statuses") || "null") || STATUS.map(([s]) => s));
+S.mapLevel = store.get("vd-maplevel") || "tasks";
 const completedOn = t => t.completed_at ? String(t.completed_at).slice(0, 10) : (closed(t) ? t.date : null);
 const closed = t => t.status === "done" || t.status === "cancelled";
 const areaOf = name => (S.projects.find(p => p.name === name) || {}).area || "General";
-const visible = () => S.tasks.filter(t =>
+const visible = () => S.tasks.filter(t => S.statuses.has(t.status) &&
   (!S.filter || t.project === S.filter || areaOf(t.project) === S.filter) &&
   (!S.q || (t.title + " " + t.description + " " + t.project).toLowerCase().includes(S.q)));
 const sortTasks = a => a.slice().sort((x, y) => (SORDER[x.status] ?? 2) - (SORDER[y.status] ?? 2) || (PRI[x.priority] ?? 1) - (PRI[y.priority] ?? 1) || (x.date || "9").localeCompare(y.date || "9") || x.title.localeCompare(y.title));
@@ -492,7 +508,9 @@ function projectsView() {
 }
 
 /* ---------- tree ---------- */
-const closedToggle = () => `<label class="toggle"><input type="checkbox" id="showClosed"${S.showClosed ? " checked" : ""}>Show completed</label>`;
+const statusFilter = () => `<div class="filters" role="group" aria-label="Filter by status"><span class="lbl">Status</span>
+  ${STATUS.map(([s, l]) => `<button class="sf" data-sf="${s}" aria-pressed="${S.statuses.has(s)}" style="--c:var(${SVAR[s]})"><span class="sdot"></span>${l}</button>`).join("")}
+  <span class="sep"></span><button class="sf preset" data-sfp="active">Active only</button><button class="sf preset" data-sfp="all">All</button></div>`;
 const statusBar = list => {
   const n = list.length || 1;
   return `<div class="bar" role="img" aria-label="status mix">${STATUS.map(([s]) => {
@@ -525,22 +543,29 @@ function treeView() {
         ${statusBar(list)}<span class="pct">${pctDone(list)}</span><span class="opn">${list.filter(t => !closed(t)).length} open</span>
       </button>${open ? `<div class="tkids">${kids()}</div>` : ""}</div>`;
   };
-  return `<div class="toolbar"><button class="btn" data-expand="all">Expand all</button><button class="btn" data-expand="none">Collapse all</button>${closedToggle()}</div>
+  return `<div class="toolbar"><button class="btn" data-expand="all">Expand all</button><button class="btn" data-expand="none">Collapse all</button></div>
   <div class="tree">${tree.map(a => {
     const aTasks = a.projects.flatMap(p => p.tasks);
     return node("area", "a:" + a.name, a.name, `${a.projects.length} projects · ${aTasks.length} tasks`, aTasks, () => a.projects.map(p =>
       node("proj", "p:" + p.name, p.name, p.description ? esc(p.description) : "", p.tasks, () => {
-        const list = sortTasks(p.tasks.filter(t => S.showClosed || !closed(t)));
-        return list.length ? `<ul class="list">${list.map(row).join("")}</ul>` : `<p class="empty">${p.tasks.length ? "All tasks completed." : "No tasks yet."}</p>`;
+        const list = sortTasks(p.tasks);
+        return list.length ? `<ul class="list">${list.map(row).join("")}</ul>` : `<p class="empty">No tasks with the selected statuses.</p>`;
       }, `<span class="dot" style="--h:${hue(p.name)}"></span>`)).join(""), icon("layers"));
   }).join("")}</div>`;
 }
 
 /* ---------- map ---------- */
+function scopeOptions() {
+  const areas = {};
+  for (const p of S.projects) (areas[p.area || "General"] ||= []).push(p.name);
+  return Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}"><option value="${esc(a)}"${S.filter === a ? " selected" : ""}>All of ${esc(a)}</option>${
+    areas[a].sort().map(n => `<option value="${esc(n)}"${S.filter === n ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("");
+}
 function mapView() {
   return `<div class="map-wrap"><div class="map-tools">
-    <div class="map-legend">${STATUS.map(([s, l]) => `<span><span class="sdot" style="--c:var(${SVAR[s]})"></span>${l}</span>`).join("")}</div>
-    <span class="map-legend">${closedToggle()}</span><button class="btn" id="mapReset">Reset view</button>
+    <select class="mselect" id="mapScope" aria-label="Show area or project"><option value="">All areas & projects</option>${scopeOptions()}</select>
+    <div class="seg" role="group" aria-label="Detail level"><button data-level="projects" aria-pressed="${S.mapLevel === "projects"}">Projects</button><button data-level="tasks" aria-pressed="${S.mapLevel === "tasks"}">Tasks</button></div>
+    <button class="btn" id="mapReset">Reset view</button>
     <span class="map-hint">Scroll to zoom · drag to pan · click a task to edit</span></div><svg id="map" role="img" aria-label="Map of areas, projects and tasks"></svg></div>`;
 }
 
@@ -549,11 +574,11 @@ function drawMap() {
   const svg = d3.select("#map"), el = svg.node(), W = el.clientWidth, H = el.clientHeight;
   const data = { name: "All work", kind: "root", children: groupedAreas(visible()).map(a => ({
     name: a.name, kind: "area", children: a.projects.map(p => ({
-      name: p.name, kind: "project", children: sortTasks(p.tasks.filter(t => S.showClosed || !closed(t))).map(t => ({ name: t.title, kind: "task", task: t })) })) })) };
-  const root = d3.hierarchy(data);
-  const R = Math.max(380, root.leaves().length * 18 / (2 * Math.PI));
+      name: p.name, kind: "project", children: S.mapLevel === "projects" ? undefined : sortTasks(p.tasks).map(t => ({ name: t.title, kind: "task", task: t })) })) })) };
+  const root = d3.hierarchy(data.children.length === 1 ? data.children[0] : data);  // one area selected: it becomes the centre
+  const R = Math.max(240, root.leaves().length * 18 / (2 * Math.PI)), few = root.leaves().length <= 40;
   d3.tree().size([2 * Math.PI, R]).separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth)(root);
-  for (const d of root.descendants()) d.y = [0, 0.3, 0.64, 1][d.depth] * R;  // more room for area/project labels
+  for (const d of root.descendants()) d.y = d.depth / (root.height || 1) * R;  // even rings, whatever the depth
   const g = svg.append("g");
   g.append("g").selectAll("path").data(root.links()).join("path").attr("class", "mlink")
     .attr("d", d3.linkRadial().angle(d => d.x).radius(d => d.y));
@@ -572,14 +597,14 @@ function drawMap() {
   // Tasks: radial labels pointing outward. Root/areas/projects: horizontal labels just above the dot.
   const leaf = d => d.data.kind === "task";
   node.append("text")
-    .attr("dy", d => leaf(d) ? "0.32em" : d.depth ? "-1.1em" : "2.2em")
+    .attr("dy", d => leaf(d) ? "0.32em" : d.depth ? "-1.1em" : "2.4em")
     .attr("x", d => leaf(d) ? (d.x < Math.PI ? 8 : -8) : 0)
     .attr("text-anchor", d => leaf(d) ? (d.x < Math.PI ? "start" : "end") : "middle")
     .attr("transform", d => leaf(d) ? (d.x >= Math.PI ? "rotate(180)" : null) : d.depth ? `rotate(${90 - d.x * 180 / Math.PI})` : null)
     .text(d => d.data.name.length > 42 ? d.data.name.slice(0, 40) + "…" : d.data.name);
-  const fit = Math.min(W, H) / (2 * (R + 60));
+  const fit = Math.min(W, H) / (2 * (R + (few ? 170 : 60)));  // leave room for visible task labels
   const start = d3.zoomIdentity.translate(W / 2, H / 2 + 16).scale(fit);
-  const zoom = d3.zoom().scaleExtent([0.2, 5]).on("zoom", e => { g.attr("transform", e.transform); el.classList.toggle("zoomed", e.transform.k > fit * 2.2); });
+  const zoom = d3.zoom().scaleExtent([0.2, 5]).on("zoom", e => { g.attr("transform", e.transform); el.classList.toggle("zoomed", few || e.transform.k > fit * 2.2); });
   svg.call(zoom).call(zoom.transform, start);
   $("#mapReset").onclick = () => svg.transition().duration(300).call(zoom.transform, start);
 }
@@ -670,6 +695,7 @@ function render() {
   charts.forEach(c => c.destroy()); charts = [];
   $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, week: weekView, month: monthView, projects: projectsView,
     tree: treeView, map: mapView, analytics: analyticsView }[S.view]();
+  if (S.view !== "projects") $("#view").insertAdjacentHTML("afterbegin", statusFilter());
   if (S.view === "map") drawMap();
   if (S.view === "analytics") drawCharts();
 }
@@ -716,9 +742,12 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand]");
+  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level]");
   if (!el) return;
-  if (el.dataset.toggle) { const k = el.dataset.toggle; S.expanded.has(k) ? S.expanded.delete(k) : S.expanded.add(k); saveExpanded(); }
+  if (el.dataset.sf) { S.statuses.has(el.dataset.sf) ? S.statuses.delete(el.dataset.sf) : S.statuses.add(el.dataset.sf); saveStatuses(); }
+  else if (el.dataset.sfp) { S.statuses = new Set(el.dataset.sfp === "all" ? STATUS.map(([s]) => s) : ACTIVE_S); saveStatuses(); }
+  else if (el.dataset.level) { S.mapLevel = el.dataset.level; store.set("vd-maplevel", S.mapLevel); }
+  else if (el.dataset.toggle) { const k = el.dataset.toggle; S.expanded.has(k) ? S.expanded.delete(k) : S.expanded.add(k); saveExpanded(); }
   else if (el.dataset.expand) {
     S.expanded.clear();
     if (el.dataset.expand === "all") for (const p of S.projects) { S.expanded.add("a:" + (p.area || "General")); S.expanded.add("p:" + p.name); }
@@ -732,9 +761,10 @@ document.addEventListener("click", e => {
   else if (el.hasAttribute("data-close")) return closeDrawer();
   render();
 });
+const saveStatuses = () => store.set("vd-statuses", JSON.stringify([...S.statuses]));
 const saveExpanded = () => store.set("vd-expanded", JSON.stringify([...S.expanded]));
 document.addEventListener("change", async e => {
-  if (e.target.id === "showClosed") { S.showClosed = e.target.checked; store.set("vd-closed", S.showClosed ? "1" : "0"); return render(); }
+  if (e.target.id === "mapScope") { S.filter = e.target.value || null; return render(); }
   if (!e.target.matches("select.st")) return;
   try { await save(Number(e.target.dataset.id), { status: e.target.value }); } catch { load(); }
 });
