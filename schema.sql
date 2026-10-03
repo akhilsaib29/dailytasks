@@ -15,6 +15,7 @@ create table tasks (
   priority    text not null default 'med' check (priority in ('high','med','low')),
   status      text not null default 'open' check (status in ('open','in_progress','on_hold','in_review','done','cancelled')),
   done        boolean not null default false,
+  completed_at date,  -- set when status becomes done/cancelled (feeds Analytics)
   created_at  timestamptz default now()
 );
 
@@ -32,3 +33,7 @@ create table drafts (
 alter table projects enable row level security;
 alter table tasks    enable row level security;
 alter table drafts   enable row level security;
+
+-- Upgrade for databases created before completed_at existed (safe to re-run):
+-- alter table tasks add column if not exists completed_at date;
+-- update tasks set completed_at = date where done and completed_at is null;

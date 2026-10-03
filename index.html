@@ -191,6 +191,59 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
   .cell{min-height:58px}.cell .mini{display:none}
   .grid2{grid-template-columns:1fr}
 }
+/* toolbar */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;min-height:36px}
+.toggle input{accent-color:var(--primary);width:16px;height:16px}
+
+/* tree */
+.tree{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.trow{display:grid;grid-template-columns:20px minmax(0,1fr) 160px 52px 64px;gap:12px;align-items:center;width:100%;border:0;background:none;text-align:left;padding:10px 16px;border-top:1px solid var(--line);transition:background .12s}
+.trow:hover{background:color-mix(in srgb,var(--primary) 4%,var(--panel))}
+.tree > .tnode:first-child > .trow{border-top:0}
+.trow .chev{transition:transform .2s;color:var(--faint);display:inline-flex}
+.tnode.open > .trow .chev{transform:rotate(90deg)}
+.trow .name{display:flex;align-items:center;gap:10px;min-width:0;font-weight:600}
+.trow .name span.lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow .name small{font-weight:500;color:var(--muted);font-size:12px;white-space:nowrap}
+.trow .pct{font:500 12px var(--mono);color:var(--muted);text-align:right}
+.trow .opn{font:500 12px var(--mono);text-align:right;color:var(--fg)}
+.tnode.area > .trow{background:var(--side)}
+.tnode.area > .trow .name{font-size:14px}
+.tnode.proj > .trow{padding-left:44px;grid-template-columns:20px minmax(0,1fr) 160px 52px 64px}
+.tnode.proj > .trow .name{font-weight:500}
+.tkids .list .row{padding-left:76px}
+.tkids .empty{padding-left:76px}
+
+/* map */
+.map-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden;height:calc(100vh - 170px);min-height:480px}
+#map{width:100%;height:100%;display:block;cursor:grab}
+#map:active{cursor:grabbing}
+.map-tools{position:absolute;top:12px;left:12px;right:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;pointer-events:none}
+.map-tools > *{pointer-events:auto}
+.map-legend{display:flex;flex-wrap:wrap;gap:12px;background:color-mix(in srgb,var(--panel) 90%,transparent);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;color:var(--muted)}
+.map-legend span{display:inline-flex;align-items:center;gap:5px}
+.map-hint{margin-left:auto;font-size:12px;color:var(--faint);background:color-mix(in srgb,var(--panel) 90%,transparent);padding:4px 8px;border-radius:6px}
+.mlink{fill:none;stroke:var(--line-2);stroke-opacity:.7;stroke-width:1.2}
+.mnode circle{stroke:var(--panel);stroke-width:2;cursor:pointer;transition:r .15s}
+.mnode:hover circle{stroke:var(--fg)}
+.mnode text{font:500 11px var(--font);fill:var(--fg);paint-order:stroke;stroke:var(--panel);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
+.mnode.area text{font-size:13px;font-weight:700}
+.mnode.root text{font-size:14px;font-weight:700}
+.mnode.task text{font-size:10px;fill:var(--muted);display:none}
+#map.zoomed .mnode.task text{display:block}
+
+/* analytics */
+.charts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.chart{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:16px;display:grid;gap:10px;min-width:0}
+.chart.wide{grid-column:1/-1}
+.chart h3{margin:0;font-size:14px}
+.chart p{margin:0;font-size:12px;color:var(--muted)}
+.chart .cv{position:relative;height:280px}
+.chart.tall .cv{height:420px}
+@media (max-width:1000px){.charts{grid-template-columns:1fr}}
+@media (max-width:700px){.trow{grid-template-columns:20px minmax(0,1fr) 52px}.trow .bar,.trow .pct{display:none}.tnode.proj > .trow{padding-left:28px;grid-template-columns:20px minmax(0,1fr) 52px}.tkids .list .row,.tkids .empty{padding-left:16px}}
+
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
@@ -231,6 +284,8 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 </div>
 <div id="drawerRoot"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -257,6 +312,10 @@ const ICONS = {
   search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   left: '<path d="m15 18-6-6 6-6"/>', right: '<path d="m9 18 6-6-6-6"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>',
   layers: '<path d="m12 2 10 5-10 5L2 7Z"/><path d="m2 17 10 5 10-5M2 12l10 5 10-5"/>',
+  tree: '<path d="M3 5h4M3 12h4M3 19h4M11 5h10M11 12h10M11 19h10"/>',
+  map: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="5" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="19" r="2"/><path d="m6 6.5 4 3.5M18 6.5l-4 3.5M6 17.5l4-3.5M18 17.5l-4-3.5"/>',
+  chart: '<path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>',
 };
 const icon = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -265,12 +324,18 @@ const SLABEL = Object.fromEntries(STATUS);
 const SVAR = { open: "--s-open", in_progress: "--s-progress", in_review: "--s-review", on_hold: "--s-hold", done: "--s-done", cancelled: "--s-cancel" };
 const PRI = { high: 0, med: 1, low: 2 };
 const SORDER = { in_progress: 0, in_review: 1, open: 2, on_hold: 3, done: 4, cancelled: 5 };
-const VIEWS = [["today", "Today", "sun"], ["backlog", "Backlog", "inbox"], ["board", "Board", "board"], ["week", "Week", "week"], ["month", "Month", "month"], ["projects", "Projects", "folder"]];
+const VIEWS = [["today", "Today", "sun", "Plan"], ["backlog", "Backlog", "inbox", "Plan"], ["week", "Week", "week", "Plan"], ["month", "Month", "month", "Plan"],
+  ["board", "Board", "board", "Organize"], ["tree", "Tree", "tree", "Organize"], ["projects", "Projects", "folder", "Organize"],
+  ["map", "Map", "map", "Insights"], ["analytics", "Analytics", "chart", "Insights"]];
+let charts = [];
 
 const S = { projects: [], tasks: [], logs: [], view: store.get("vd-view2") || "today", cursor: new Date(), filter: null, q: "", key: store.get("vd-key") || "", preview: false, editing: null };
 // Bookmark https://…/#key=YOURKEY to open straight in; the #part never leaves the browser.
 const hashKey = new URLSearchParams(location.hash.slice(1)).get("key");
 if (hashKey) { S.key = hashKey; store.set("vd-key", hashKey); }
+S.expanded = new Set(JSON.parse(store.get("vd-expanded") || "null") || []);
+S.showClosed = store.get("vd-closed") === "1";
+const completedOn = t => t.completed_at ? String(t.completed_at).slice(0, 10) : (closed(t) ? t.date : null);
 const closed = t => t.status === "done" || t.status === "cancelled";
 const areaOf = name => (S.projects.find(p => p.name === name) || {}).area || "General";
 const visible = () => S.tasks.filter(t =>
@@ -301,6 +366,7 @@ async function load() {
   }
   for (const t of d.tasks) t.status ||= t.done ? "done" : "open";
   Object.assign(S, d);
+  if (!store.get("vd-expanded")) for (const p of S.projects) S.expanded.add("a:" + (p.area || "General"));
   $("#banner").hidden = !S.preview;
   $("#gate").hidden = true; $("#app").hidden = false;
   render();
@@ -308,8 +374,10 @@ async function load() {
 async function save(id, patch) {
   const t = S.tasks.find(x => x.id === id);
   if (!S.preview) await api("tasks/" + id, { method: "PATCH", body: JSON.stringify(patch) });
+  const wasClosed = closed(t);
   Object.assign(t, patch);
   t.done = closed(t);
+  if (t.done !== wasClosed) t.completed_at = t.done ? today() : null;
   render();
 }
 async function remove(id) {
@@ -423,12 +491,164 @@ function projectsView() {
   }).join("");
 }
 
+/* ---------- tree ---------- */
+const closedToggle = () => `<label class="toggle"><input type="checkbox" id="showClosed"${S.showClosed ? " checked" : ""}>Show completed</label>`;
+const statusBar = list => {
+  const n = list.length || 1;
+  return `<div class="bar" role="img" aria-label="status mix">${STATUS.map(([s]) => {
+    const c = list.filter(t => t.status === s).length;
+    return c ? `<i style="width:${c / n * 100}%;background:var(${SVAR[s]})"></i>` : "";
+  }).join("")}</div>`;
+};
+const pctDone = list => list.length ? Math.round(list.filter(closed).length / list.length * 100) + "%" : "—";
+
+function groupedAreas(tasks) {
+  const areas = {};
+  for (const p of S.projects) {
+    const pt = tasks.filter(t => t.project === p.name);
+    if (S.filter && p.name !== S.filter && p.area !== S.filter) continue;
+    if (S.q && !pt.length) continue;
+    (areas[p.area || "General"] ||= []).push({ ...p, tasks: pt });
+  }
+  return Object.keys(areas).sort().map(a => ({ name: a, projects: areas[a].sort((x, y) => x.name.localeCompare(y.name)) }));
+}
+
+function treeView() {
+  const tree = groupedAreas(visible());
+  if (!tree.length) return `<section class="section"><p class="empty">No projects match.</p></section>`;
+  const node = (kind, key, label, sub, list, kids, dot) => {
+    const open = S.expanded.has(key);
+    return `<div class="tnode ${kind}${open ? " open" : ""}">
+      <button class="trow" data-toggle="${esc(key)}" aria-expanded="${open}">
+        <span class="chev">${icon("chev")}</span>
+        <span class="name">${dot}<span class="lbl">${esc(label)}</span><small>${sub}</small></span>
+        ${statusBar(list)}<span class="pct">${pctDone(list)}</span><span class="opn">${list.filter(t => !closed(t)).length} open</span>
+      </button>${open ? `<div class="tkids">${kids()}</div>` : ""}</div>`;
+  };
+  return `<div class="toolbar"><button class="btn" data-expand="all">Expand all</button><button class="btn" data-expand="none">Collapse all</button>${closedToggle()}</div>
+  <div class="tree">${tree.map(a => {
+    const aTasks = a.projects.flatMap(p => p.tasks);
+    return node("area", "a:" + a.name, a.name, `${a.projects.length} projects · ${aTasks.length} tasks`, aTasks, () => a.projects.map(p =>
+      node("proj", "p:" + p.name, p.name, p.description ? esc(p.description) : "", p.tasks, () => {
+        const list = sortTasks(p.tasks.filter(t => S.showClosed || !closed(t)));
+        return list.length ? `<ul class="list">${list.map(row).join("")}</ul>` : `<p class="empty">${p.tasks.length ? "All tasks completed." : "No tasks yet."}</p>`;
+      }, `<span class="dot" style="--h:${hue(p.name)}"></span>`)).join(""), icon("layers"));
+  }).join("")}</div>`;
+}
+
+/* ---------- map ---------- */
+function mapView() {
+  return `<div class="map-wrap"><div class="map-tools">
+    <div class="map-legend">${STATUS.map(([s, l]) => `<span><span class="sdot" style="--c:var(${SVAR[s]})"></span>${l}</span>`).join("")}</div>
+    <span class="map-legend">${closedToggle()}</span><button class="btn" id="mapReset">Reset view</button>
+    <span class="map-hint">Scroll to zoom · drag to pan · click a task to edit</span></div><svg id="map" role="img" aria-label="Map of areas, projects and tasks"></svg></div>`;
+}
+
+function drawMap() {
+  if (!window.d3) return;
+  const svg = d3.select("#map"), el = svg.node(), W = el.clientWidth, H = el.clientHeight;
+  const data = { name: "All work", kind: "root", children: groupedAreas(visible()).map(a => ({
+    name: a.name, kind: "area", children: a.projects.map(p => ({
+      name: p.name, kind: "project", children: sortTasks(p.tasks.filter(t => S.showClosed || !closed(t))).map(t => ({ name: t.title, kind: "task", task: t })) })) })) };
+  const root = d3.hierarchy(data);
+  const R = Math.max(380, root.leaves().length * 18 / (2 * Math.PI));
+  d3.tree().size([2 * Math.PI, R]).separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth)(root);
+  for (const d of root.descendants()) d.y = [0, 0.3, 0.64, 1][d.depth] * R;  // more room for area/project labels
+  const g = svg.append("g");
+  g.append("g").selectAll("path").data(root.links()).join("path").attr("class", "mlink")
+    .attr("d", d3.linkRadial().angle(d => d.x).radius(d => d.y));
+  const areaOfNode = d => d.ancestors().find(x => x.data.kind === "area");
+  const color = d => d.data.kind === "task" ? `var(${SVAR[d.data.task.status]})`
+    : d.data.kind === "root" ? "var(--primary)" : `hsl(${hue(d.data.kind === "area" ? d.data.name : d.data.name)} 60% 50%)`;
+  const node = g.append("g").selectAll("g").data(root.descendants()).join("g")
+    .attr("class", d => "mnode " + d.data.kind)
+    .attr("transform", d => d.depth ? `rotate(${d.x * 180 / Math.PI - 90}) translate(${d.y},0)` : null);
+  node.append("circle").attr("r", d => ({ root: 12, area: 9, project: 6.5, task: 4 }[d.data.kind])).attr("fill", color)
+    .on("click", (e, d) => {
+      if (d.data.kind === "task") openDrawer(d.data.task.id);
+      else if (d.data.kind !== "root") { S.filter = d.data.name; S.view = "tree"; S.expanded.add((d.data.kind === "area" ? "a:" : "p:") + d.data.name); render(); }
+    })
+    .append("title").text(d => d.data.kind === "task" ? `${d.data.name}\n${SLABEL[d.data.task.status]} · ${d.data.task.project}` : d.data.name);
+  // Tasks: radial labels pointing outward. Root/areas/projects: horizontal labels just above the dot.
+  const leaf = d => d.data.kind === "task";
+  node.append("text")
+    .attr("dy", d => leaf(d) ? "0.32em" : d.depth ? "-1.1em" : "2.2em")
+    .attr("x", d => leaf(d) ? (d.x < Math.PI ? 8 : -8) : 0)
+    .attr("text-anchor", d => leaf(d) ? (d.x < Math.PI ? "start" : "end") : "middle")
+    .attr("transform", d => leaf(d) ? (d.x >= Math.PI ? "rotate(180)" : null) : d.depth ? `rotate(${90 - d.x * 180 / Math.PI})` : null)
+    .text(d => d.data.name.length > 42 ? d.data.name.slice(0, 40) + "…" : d.data.name);
+  const fit = Math.min(W, H) / (2 * (R + 60));
+  const start = d3.zoomIdentity.translate(W / 2, H / 2 + 16).scale(fit);
+  const zoom = d3.zoom().scaleExtent([0.2, 5]).on("zoom", e => { g.attr("transform", e.transform); el.classList.toggle("zoomed", e.transform.k > fit * 2.2); });
+  svg.call(zoom).call(zoom.transform, start);
+  $("#mapReset").onclick = () => svg.transition().duration(300).call(zoom.transform, start);
+}
+
+/* ---------- analytics ---------- */
+function analyticsView() {
+  const all = visible(), open = all.filter(t => !closed(t)), t0 = today(), d30 = iso(addDays(new Date(), -30));
+  const done30 = all.filter(t => (completedOn(t) || "") >= d30 && t.status === "done").length;
+  const tiles = [["Open", open.length], ["In progress", open.filter(t => t.status === "in_progress").length],
+    ["Overdue", open.filter(t => t.date && t.date < t0).length, "warn"], ["Done · last 30 days", done30], ["Completion rate", pctDone(all)]];
+  return `<div class="tiles">${tiles.map(([k, v, c]) => `<div class="tile${c && v ? " " + c : ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("")}</div>
+  <div class="charts">
+    <div class="chart wide"><h3>Weekly throughput</h3><p>Tasks created vs completed, last 16 weeks</p><div class="cv"><canvas id="c-week"></canvas></div></div>
+    <div class="chart"><h3>Status by area</h3><p>Where the work sits right now</p><div class="cv"><canvas id="c-area"></canvas></div></div>
+    <div class="chart"><h3>Open work by status</h3><p>${open.length} open tasks</p><div class="cv"><canvas id="c-status"></canvas></div></div>
+    <div class="chart wide tall"><h3>Project health</h3><p>Open vs completed per project, most open first</p><div class="cv"><canvas id="c-proj"></canvas></div></div>
+    <div class="chart"><h3>Open work by priority</h3><p>How urgent the open load is</p><div class="cv"><canvas id="c-pri"></canvas></div></div>
+    <div class="chart"><h3>Open tasks per area</h3><p>Load balance across areas</p><div class="cv"><canvas id="c-load"></canvas></div></div>
+  </div>`;
+}
+
+function drawCharts() {
+  if (!window.Chart) return;
+  const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+  Chart.defaults.color = v("--muted"); Chart.defaults.borderColor = v("--line");
+  Chart.defaults.font.family = v("--font"); Chart.defaults.font.size = 12;
+  Chart.defaults.plugins.legend.labels.usePointStyle = true; Chart.defaults.plugins.legend.labels.boxWidth = 8;
+  const all = visible(), open = all.filter(t => !closed(t));
+  const base = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } };
+  const add = (id, cfg) => charts.push(new Chart(document.getElementById(id), cfg));
+
+  const w0 = weekStart(new Date()), weeks = [...Array(16)].map((_, i) => addDays(w0, -7 * (15 - i)));
+  const inWeek = (s, w) => s && s >= iso(w) && s < iso(addDays(w, 7));
+  add("c-week", { type: "bar", data: { labels: weeks.map(w => fmt(w, { day: "numeric", month: "short" })), datasets: [
+    { label: "Created", data: weeks.map(w => all.filter(t => inWeek(String(t.created_at || "").slice(0, 10), w)).length), backgroundColor: v("--line-2"), borderRadius: 4 },
+    { label: "Completed", data: weeks.map(w => all.filter(t => t.status === "done" && inWeek(completedOn(t), w)).length), backgroundColor: v("--s-done"), borderRadius: 4 }] },
+    options: { ...base, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } } });
+
+  const areas = groupedAreas(all), aTasks = a => a.projects.flatMap(p => p.tasks);
+  add("c-area", { type: "bar", data: { labels: areas.map(a => a.name), datasets: STATUS.map(([s, l]) => ({
+    label: l, data: areas.map(a => aTasks(a).filter(t => t.status === s).length), backgroundColor: v(SVAR[s]) })) },
+    options: { ...base, indexAxis: "y", scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true, grid: { display: false } } } } });
+
+  const openStatus = STATUS.filter(([s]) => !["done", "cancelled"].includes(s));
+  add("c-status", { type: "doughnut", data: { labels: openStatus.map(([, l]) => l), datasets: [{
+    data: openStatus.map(([s]) => open.filter(t => t.status === s).length), backgroundColor: openStatus.map(([s]) => v(SVAR[s])), borderColor: v("--panel"), borderWidth: 2 }] },
+    options: { ...base, cutout: "62%", plugins: { legend: { position: "right" } } } });
+
+  const projs = areas.flatMap(a => a.projects).sort((x, y) => y.tasks.filter(t => !closed(t)).length - x.tasks.filter(t => !closed(t)).length);
+  add("c-proj", { type: "bar", data: { labels: projs.map(p => p.name), datasets: [
+    { label: "Open", data: projs.map(p => p.tasks.filter(t => !closed(t)).length), backgroundColor: v("--s-progress"), borderRadius: 3 },
+    { label: "Completed", data: projs.map(p => p.tasks.filter(closed).length), backgroundColor: v("--s-done"), borderRadius: 3 }] },
+    options: { ...base, indexAxis: "y", scales: { x: { stacked: true, ticks: { precision: 0 } }, y: { stacked: true, grid: { display: false } } } } });
+
+  add("c-pri", { type: "doughnut", data: { labels: ["High", "Medium", "Low"], datasets: [{
+    data: ["high", "med", "low"].map(p => open.filter(t => t.priority === p).length), backgroundColor: [v("--p-high"), v("--p-med"), v("--p-low")], borderColor: v("--panel"), borderWidth: 2 }] },
+    options: { ...base, cutout: "62%", plugins: { legend: { position: "right" } } } });
+
+  add("c-load", { type: "bar", data: { labels: areas.map(a => a.name), datasets: [{
+    label: "Open tasks", data: areas.map(a => aTasks(a).filter(t => !closed(t)).length), backgroundColor: areas.map(a => `hsl(${hue(a.name)} 60% 50%)`), borderRadius: 4 }] },
+    options: { ...base, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } } });
+}
+
 /* ---------- shell ---------- */
 function render() {
   const open = S.tasks.filter(t => !closed(t)), counts = {
     today: open.filter(t => t.date && t.date <= today()).length, backlog: open.filter(t => !t.date).length,
     board: open.length, projects: S.projects.length };
-  $("#views").innerHTML = `<div class="nav-label">Views</div>` + VIEWS.map(([v, l, ic]) =>
+  $("#views").innerHTML = VIEWS.map(([v, l, ic, grp], i) => (i === 0 || VIEWS[i - 1][3] !== grp ? `<div class="nav-label"${i ? ' style="margin-top:10px"' : ""}>${grp}</div>` : "") +
     `<button data-view="${v}" aria-current="${S.view === v}">${icon(ic)}${l}<span class="count">${counts[v] || ""}</span></button>`).join("");
   $("#mviews").innerHTML = VIEWS.map(([v, l]) => `<button data-view="${v}" aria-current="${S.view === v}">${l}</button>`).join("");
 
@@ -441,13 +661,17 @@ function render() {
   ).join("");
 
   const c = S.cursor, s = weekStart(c);
-  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects" }[S.view];
+  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects", tree: "Tree", map: "Map", analytics: "Analytics" }[S.view];
   $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   $("#dateNav").style.display = ["today", "week", "month"].includes(S.view) ? "flex" : "none";
   $("#range").textContent = S.view === "today" ? fmt(c, { day: "numeric", month: "short", year: "numeric" })
     : S.view === "week" ? `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(addDays(s, 6), { day: "numeric", month: "short" })}` : fmt(c, { month: "long", year: "numeric" });
   $("#filterChip").innerHTML = S.filter ? `<span class="chip-filter">${esc(S.filter)}<button data-clear aria-label="Clear filter">${icon("x")}</button></span>` : "";
-  $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, week: weekView, month: monthView, projects: projectsView }[S.view]();
+  charts.forEach(c => c.destroy()); charts = [];
+  $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, week: weekView, month: monthView, projects: projectsView,
+    tree: treeView, map: mapView, analytics: analyticsView }[S.view]();
+  if (S.view === "map") drawMap();
+  if (S.view === "analytics") drawCharts();
 }
 
 /* ---------- drawer ---------- */
@@ -492,9 +716,15 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close]");
+  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand]");
   if (!el) return;
-  if (el.dataset.view) { S.view = el.dataset.view; store.set("vd-view2", S.view); }
+  if (el.dataset.toggle) { const k = el.dataset.toggle; S.expanded.has(k) ? S.expanded.delete(k) : S.expanded.add(k); saveExpanded(); }
+  else if (el.dataset.expand) {
+    S.expanded.clear();
+    if (el.dataset.expand === "all") for (const p of S.projects) { S.expanded.add("a:" + (p.area || "General")); S.expanded.add("p:" + p.name); }
+    saveExpanded();
+  }
+  else if (el.dataset.view) { S.view = el.dataset.view; store.set("vd-view2", S.view); }
   else if (el.dataset.filter !== undefined) { S.filter = S.filter === el.dataset.filter && !el.dataset.then ? null : el.dataset.filter; if (el.dataset.then) S.view = el.dataset.then; }
   else if (el.hasAttribute("data-clear")) S.filter = null;
   else if (el.dataset.goto) { S.cursor = parse(el.dataset.goto); S.view = "today"; }
@@ -502,7 +732,9 @@ document.addEventListener("click", e => {
   else if (el.hasAttribute("data-close")) return closeDrawer();
   render();
 });
+const saveExpanded = () => store.set("vd-expanded", JSON.stringify([...S.expanded]));
 document.addEventListener("change", async e => {
+  if (e.target.id === "showClosed") { S.showClosed = e.target.checked; store.set("vd-closed", S.showClosed ? "1" : "0"); return render(); }
   if (!e.target.matches("select.st")) return;
   try { await save(Number(e.target.dataset.id), { status: e.target.value }); } catch { load(); }
 });

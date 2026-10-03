@@ -274,6 +274,9 @@ def update_task(tid: int, body: dict, x_key: str = Header("")):
     patch = {k: body[k] for k in ("title", "description", "status", "priority", "date", "project") if k in body}
     if "status" in patch:
         patch["done"] = patch["status"] in ("done", "cancelled")
+        was = sb("GET", f"tasks?id=eq.{tid}&select=done")
+        if was and was[0]["done"] != patch["done"]:
+            patch["completed_at"] = today().isoformat() if patch["done"] else None
     if "date" in patch:
         patch["date"] = valid_date(patch["date"], None)
     if patch:
