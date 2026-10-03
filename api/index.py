@@ -296,6 +296,12 @@ def setup(key: str, request: Request):
               allowed_updates=["message", "callback_query"])
 
 
+@app.exception_handler(404)
+def not_found(request: Request, exc):
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": "Not Found", "path": request.url.path}, status_code=404)
+
+
 @app.get("/")
 def home():  # Vercel serves index.html itself; this is for local runs
     return FileResponse(Path(__file__).parent.parent / "index.html")
