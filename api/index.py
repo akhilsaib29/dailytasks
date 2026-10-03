@@ -53,11 +53,16 @@ def transcribe(data, filename):
 
 
 def ask_llm(prompt):
-    r = http.post(f"{GROQ}/chat/completions", headers=groq_auth(), json={
-        "model": E("GROQ_MODEL", "llama-3.3-70b-versatile"), "temperature": 0.2,
-        "response_format": {"type": "json_object"},
-        "messages": [{"role": "user", "content": prompt}]})
-    r.raise_for_status()
+    # Groq retires models now and then: try the configured one, then known-good fallbacks.
+    models = dict.fromkeys(m for m in (E("GROQ_MODEL").strip(), "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "llama-3.1-8b-instant") if m)
+    for model in models:
+        r = http.post(f"{GROQ}/chat/completions", headers=groq_auth(), json={
+            "model": model, "temperature": 0.2, "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": prompt}]})
+        if r.status_code not in (400, 404) or "model" not in r.text:
+            break
+    if r.is_error:
+        raise RuntimeError(f"Groq {r.status_code}: {r.text[:300]}")
     return json.loads(r.json()["choices"][0]["message"]["content"])
 
 
