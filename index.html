@@ -730,7 +730,7 @@ function openDrawer(id) {
     for (const k of ["title", "status", "priority", "project", "description"]) if (f[k] !== (t[k] ?? "")) patch[k] = f[k];
     if ((f.date || null) !== (t.date || null)) patch.date = f.date || null;
     try { if (Object.keys(patch).length) await save(id, patch); closeDrawer(); }
-    catch { $("#dErr").textContent = "Couldn't save. Check your connection and try again."; }
+    catch (err) { $("#dErr").textContent = "Couldn't save: " + (String(err.message).match(/"detail":"([^"]+)"/)?.[1] || err.message).slice(0, 200); }
   };
   $("#dDel").onclick = async e => {
     if (!e.target.classList.contains("armed")) { e.target.classList.add("armed"); e.target.textContent = "Confirm delete"; return; }

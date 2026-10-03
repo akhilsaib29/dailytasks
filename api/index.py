@@ -25,7 +25,8 @@ def sb(method, path, body=None, prefer="return=representation"):
     key = E("SUPABASE_SERVICE_KEY")
     r = http.request(method, f"{SB}/{path}", json=body,
                      headers={"apikey": key, "Authorization": f"Bearer {key}", "Prefer": prefer})
-    r.raise_for_status()
+    if r.is_error:
+        raise RuntimeError(f"Database {r.status_code}: {r.text[:300]}")
     return r.json() if r.content else []
 
 
@@ -78,10 +79,11 @@ Rules:
 - description: 1-2 sentences of useful context from the notes (who, what, why). Never invent facts.
 - Resolve relative dates (tomorrow, Friday, next week = next Monday, end of month) to YYYY-MM-DD. No date mentioned = today.
 - priority: "high" if urgent or due within 2 days, "low" if it can wait, else "med".
+- status: "done" if the speaker says it is finished/completed, "in_progress" if they are working on it now, "on_hold" if paused or blocked, else "open".
 - Write titles, descriptions and the summary in {language}.
 {revision}
 Reply with only a JSON object:
-{{"summary": "one sentence", "projects": [{{"name": "", "area": "", "description": "one-line goal"}}], "tasks": [{{"title": "", "description": "", "project": "", "date": "YYYY-MM-DD", "priority": "high|med|low"}}]}}
+{{"summary": "one sentence", "projects": [{{"name": "", "area": "", "description": "one-line goal"}}], "tasks": [{{"title": "", "description": "", "project": "", "date": "YYYY-MM-DD", "priority": "high|med|low", "status": "open|in_progress|on_hold|done"}}]}}
 Every project used by a task must be listed in "projects".
 
 Notes:
@@ -123,6 +125,7 @@ def clean_draft(d, fallback_date, existing=None):
             "project": str(t.get("project") or "").strip()[:60] or "General",
             "date": valid_date(t.get("date"), fallback_date),
             "priority": t.get("priority") if t.get("priority") in ("high", "med", "low") else "med",
+            "status": t.get("status") if t.get("status") in ("open", "in_progress", "on_hold", "done") else "open",
         })
     existing = existing or {}
     meta = {str(p.get("name") or "").strip(): p for p in d.get("projects") or [] if isinstance(p, dict)}
@@ -141,7 +144,8 @@ def format_draft(d, existing):
             out.append(f"<i>{escape(p['description'])}</i>")
         for t in (t for t in d["tasks"] if t["project"] == p["name"]):
             day = datetime.strptime(t["date"], "%Y-%m-%d").strftime("%a %d %b")
-            out.append(f"  ☐ <b>{escape(t['title'])}</b> · {day} · {t['priority'].upper()}")
+            mark = {"done": "✅", "in_progress": "🔄", "on_hold": "⏸"}.get(t.get("status"), "☐")
+            out.append(f"  {mark} <b>{escape(t['title'])}</b> · {day} · {t['priority'].upper()}")
             if t["description"]:
                 out.append(f"      {escape(t['description'])}")
         out.append("")
@@ -228,7 +232,9 @@ def handle_callback(cb):
     if action == "p":
         try:
             sb("POST", "projects?on_conflict=name", d["projects"], prefer="resolution=ignore-duplicates,return=minimal")
-            sb("POST", "tasks", d["tasks"], prefer="return=minimal")
+            sb("POST", "tasks", [{**t, "status": t.get("status", "open"), "done": t.get("status") == "done",
+                                  "completed_at": today().isoformat() if t.get("status") == "done" else None}
+                                 for t in d["tasks"]], prefer="return=minimal")
         except Exception:
             sb("PATCH", f"drafts?id=eq.{int(draft_id)}", {"status": "pending"}, prefer="return=minimal")
             send(chat, "⚠️ Saving failed. The draft is kept, tap Proceed again.", buttons(draft_id))
@@ -314,6 +320,12 @@ async def vercel_path(request: Request, call_next):
     return await call_next(request)
 
 
+@app.exception_handler(RuntimeError)
+def upstream_error(request: Request, exc):  # Database/Groq errors reach the dashboard with their real message
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": str(exc)}, status_code=502)
+
+
 @app.exception_handler(404)
 def not_found(request: Request, exc):
     from fastapi.responses import JSONResponse
@@ -332,7 +344,7 @@ if __name__ == "__main__":
                                {"title": "  "}, "junk"]}, "2026-10-01", {"Steel Report": "Research"})
     assert [t["title"] for t in d["tasks"]] == ["Call Ravi", "Renew domain"]
     assert d["tasks"][1] == {"title": "Renew domain", "description": "", "project": "General",
-                             "date": "2026-10-01", "priority": "med"}
+                             "date": "2026-10-01", "priority": "med", "status": "open"}
     assert [p["name"] for p in d["projects"]] == ["Steel Report", "General"]
     assert d["projects"][0] == {"name": "Steel Report", "area": "Research", "description": "launch"}
     assert d["projects"][1]["area"] == "General"
