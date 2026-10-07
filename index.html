@@ -384,7 +384,7 @@ async function load() {
   } catch (e) {
     if (e.message === "401") return;
     const r = await fetch("seed.json").catch(() => null);  // local preview before the backend exists
-    if (!r || !r.ok) return showGate(S.key ? "Can't reach the server." : "");
+    if (!r || !r.ok) return showGate(S.key ? "Server error: " + (String(e.message).match(/"detail":"([^"]+)"/)?.[1] || e.message).slice(0, 200) : "");
     d = await r.json(); S.preview = true;
   }
   for (const t of d.tasks) t.status ||= t.done ? "done" : "open";
