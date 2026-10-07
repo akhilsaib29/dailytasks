@@ -1,26 +1,28 @@
--- Run once in Supabase → SQL Editor.
-create table projects (
+-- Run once in Supabase → SQL Editor (fresh database).
+-- Zoho Projects is the source of truth for tasks; these tables mirror it and hold the work log.
+
+create table projects (            -- one row per Zoho task list
   name        text primary key,
-  area        text not null default 'General',  -- area > project > task
+  area        text not null default 'General',
   description text default '',
   created_at  timestamptz default now()
 );
 
-create table tasks (
-  id          bigint generated always as identity primary key,
-  title       text not null,
-  description text default '',
-  project     text not null references projects(name) on update cascade,
-  date        date,  -- null = backlog (no date yet)
-  priority    text not null default 'med' check (priority in ('high','med','low')),
-  status      text not null default 'open' check (status in ('open','in_progress','on_hold','in_review','done','cancelled')),
-  done        boolean not null default false,
-  completed_at date,  -- set when status becomes done/cancelled (feeds Analytics)
-  created_at  timestamptz default now()
+create table tasks (               -- mirror of Zoho tasks, refreshed by sync
+  id           bigint generated always as identity primary key,
+  zoho_id      text unique,
+  title        text not null,
+  description  text default '',
+  project      text not null references projects(name) on update cascade,
+  date         date,  -- due date; null = backlog
+  priority     text not null default 'med' check (priority in ('high','med','low')),
+  status       text not null default 'open' check (status in ('open','in_progress','in_review','on_hold','done','cancelled')),
+  done         boolean not null default false,
+  completed_at date,
+  created_at   timestamptz default now()
 );
 
--- Every message you send becomes a draft; Proceed flips status to 'saved'.
-create table drafts (
+create table drafts (              -- every Telegram message; Proceed flips status to 'saved'
   id          bigint generated always as identity primary key,
   chat_id     bigint not null,
   source      text not null,
@@ -29,11 +31,39 @@ create table drafts (
   created_at  timestamptz default now()
 );
 
+create table worklog (             -- what you worked on, per day (the ED report)
+  id          bigint generated always as identity primary key,
+  date        date not null,
+  zoho_id     text,
+  title       text not null,
+  tasklist    text,
+  note        text default '',
+  status      text,
+  draft_id    bigint,
+  created_at  timestamptz default now()
+);
+
+create table kv (                  -- Zoho token cache, last sync time, Zoho ids
+  key        text primary key,
+  value      jsonb,
+  updated_at timestamptz default now()
+);
+
 -- RLS on with no policies: only the server's service_role key can read/write.
 alter table projects enable row level security;
 alter table tasks    enable row level security;
 alter table drafts   enable row level security;
+alter table worklog  enable row level security;
+alter table kv       enable row level security;
 
--- Upgrade for databases created before completed_at existed (safe to re-run):
+
+-- ===== Upgrade an existing (pre-Zoho) database instead: run only this block =====
 -- alter table tasks add column if not exists completed_at date;
--- update tasks set completed_at = date where done and completed_at is null;
+-- alter table tasks add column if not exists zoho_id text unique;
+-- create table if not exists worklog (id bigint generated always as identity primary key, date date not null,
+--   zoho_id text, title text not null, tasklist text, note text default '', status text, draft_id bigint,
+--   created_at timestamptz default now());
+-- create table if not exists kv (key text primary key, value jsonb, updated_at timestamptz default now());
+-- alter table worklog enable row level security;
+-- alter table kv enable row level security;
+-- delete from tasks; delete from projects;   -- the first sync refills both from Zoho

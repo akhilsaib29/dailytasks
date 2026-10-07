@@ -283,6 +283,8 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
       <span id="filterChip"></span>
       <div class="spacer"></div>
       <label class="search"><span data-icon="search"></span><input id="q" type="search" placeholder="Search tasks" aria-label="Search tasks"></label>
+      <button class="btn" id="exportBtn" title="Download what this view shows as a spreadsheet (CSV)"><span data-icon="download"></span>Export</button>
+      <button class="btn icon" id="syncBtn" title="Sync with Zoho Projects" aria-label="Sync with Zoho Projects"><span data-icon="sync"></span></button>
       <div id="dateNav" style="display:flex;gap:6px;align-items:center">
         <button class="btn icon" id="prev" aria-label="Previous"><span data-icon="left"></span></button>
         <span class="range" id="range"></span>
@@ -330,6 +332,10 @@ const ICONS = {
   map: '<circle cx="12" cy="12" r="3"/><circle cx="4" cy="5" r="2"/><circle cx="20" cy="5" r="2"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="19" r="2"/><path d="m6 6.5 4 3.5M18 6.5l-4 3.5M6 17.5l4-3.5M18 17.5l-4-3.5"/>',
   chart: '<path d="M3 3v18h18"/><path d="M7 15v3M12 10v8M17 6v12"/>',
   chev: '<path d="m9 18 6-6-6-6"/>',
+  log: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+  sync: '<path d="M21 12a9 9 0 0 1-15.5 6.3L3 16M3 12a9 9 0 0 1 15.5-6.3L21 8M21 3v5h-5M3 21v-5h5"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
 };
 const icon = n => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n]}</svg>`;
 
@@ -338,10 +344,11 @@ const SLABEL = Object.fromEntries(STATUS);
 const SVAR = { open: "--s-open", in_progress: "--s-progress", in_review: "--s-review", on_hold: "--s-hold", done: "--s-done", cancelled: "--s-cancel" };
 const PRI = { high: 0, med: 1, low: 2 };
 const SORDER = { in_progress: 0, in_review: 1, open: 2, on_hold: 3, done: 4, cancelled: 5 };
-const VIEWS = [["today", "Today", "sun", "Plan"], ["backlog", "Backlog", "inbox", "Plan"], ["week", "Week", "week", "Plan"], ["month", "Month", "month", "Plan"],
+const VIEWS = [["today", "Today", "sun", "Plan"], ["worklog", "Work Log", "log", "Plan"], ["backlog", "Backlog", "inbox", "Plan"], ["week", "Week", "week", "Plan"], ["month", "Month", "month", "Plan"],
   ["board", "Board", "board", "Organize"], ["tree", "Tree", "tree", "Organize"], ["projects", "Projects", "folder", "Organize"],
   ["map", "Map", "map", "Insights"], ["analytics", "Analytics", "chart", "Insights"]];
 let charts = [];
+const LABEL = { open: "Open", in_progress: "In progress", in_review: "In review", on_hold: "On hold", done: "Done", cancelled: "Cancelled" };
 
 const S = { projects: [], tasks: [], logs: [], view: store.get("vd-view2") || "today", cursor: new Date(), filter: null, q: "", key: store.get("vd-key") || "", preview: false, editing: null };
 // Bookmark https://…/#key=YOURKEY to open straight in; the #part never leaves the browser.
@@ -381,6 +388,7 @@ async function load() {
     d = await r.json(); S.preview = true;
   }
   for (const t of d.tasks) t.status ||= t.done ? "done" : "open";
+  d.worklog ||= [];
   Object.assign(S, d);
   if (!store.get("vd-expanded")) for (const p of S.projects) S.expanded.add("a:" + (p.area || "General"));
   $("#banner").hidden = !S.preview;
@@ -668,6 +676,69 @@ function drawCharts() {
     options: { ...base, plugins: { legend: { display: false } }, scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } } });
 }
 
+/* ---------- work log ---------- */
+S.logSpan = store.get("vd-logspan") || "day";
+function logRange() {
+  if (S.logSpan === "week") { const s = weekStart(S.cursor); return [iso(s), iso(addDays(s, 6))]; }
+  return [iso(S.cursor), iso(S.cursor)];
+}
+const logEntries = () => { const [a, b] = logRange(); return S.worklog.filter(w => w.date >= a && w.date <= b && (!S.filter || w.tasklist === S.filter)); };
+
+function reportText() {
+  const [a, b] = logRange(), rows = logEntries().slice().sort((x, y) => x.date.localeCompare(y.date) || x.id - y.id);
+  const head = `Work log · ${a === b ? fmt(parse(a), { weekday: "long", day: "numeric", month: "short", year: "numeric" }) : short(a) + " – " + short(b)}`;
+  if (!rows.length) return head + "\nNo work logged.";
+  const out = [head];
+  let day = null;
+  for (const r of rows) {
+    if (r.date !== day) { day = r.date; out.push("", fmt(parse(day), { weekday: "short", day: "numeric", month: "short" })); }
+    out.push(`• ${r.title} (${r.tasklist}) — ${LABEL[r.status] || r.status}${r.note ? "\n   " + r.note : ""}`);
+  }
+  return out.join("\n");
+}
+
+function worklogView() {
+  const rows = logEntries(), byDay = {};
+  for (const r of rows) (byDay[r.date] ||= []).push(r);
+  const days = Object.keys(byDay).sort().reverse();
+  return `<div class="toolbar"><div class="seg" role="group" aria-label="Range">
+      <button data-span="day" aria-pressed="${S.logSpan === "day"}">Day</button><button data-span="week" aria-pressed="${S.logSpan === "week"}">Week</button></div>
+    <button class="btn primary" id="copyReport">${icon("copy")}Copy report for ED</button><span class="sub" id="copyMsg" role="status"></span></div>
+  ${days.length ? days.map(d => `<section class="section"><header><h2>${fmt(parse(d), { weekday: "long", day: "numeric", month: "long" })}</h2><span class="n">${byDay[d].length}</span></header>
+    <ul class="list">${byDay[d].map(r => {
+      const t = S.tasks.find(x => x.zoho_id && x.zoho_id === r.zoho_id);
+      return `<li class="row"><span class="st" data-s="${esc(r.status)}" style="cursor:default">${LABEL[r.status] || esc(r.status)}</span>
+        ${t ? `<button class="t" data-open="${t.id}">` : `<div class="t">`}<div class="title">${esc(r.title)}</div>${r.note ? `<div class="desc" style="white-space:normal">${esc(r.note)}</div>` : ""}${t ? "</button>" : "</div>"}
+        ${projChip(r.tasklist || "")}<span></span><span></span></li>`;
+    }).join("")}</ul></section>`).join("")
+    : `<section class="section"><p class="empty">Nothing logged for this ${S.logSpan}. Tell Mumbo what you worked on and tap Proceed.</p></section>`}`;
+}
+
+function csv(rows, cols) {
+  const cell = v => /[",\n]/.test(String(v ?? "")) ? `"${String(v).replace(/"/g, '""')}"` : String(v ?? "");
+  return "\ufeff" + [cols.map(c => c[0]).join(","), ...rows.map(r => cols.map(c => cell(c[1](r))).join(","))].join("\r\n");
+}
+function download(name, text) {
+  const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([text], { type: "text/csv" })), download: name });
+  document.body.append(a); a.click(); a.remove();
+}
+$("#exportBtn").onclick = () => {
+  if (S.view === "worklog") {
+    const [a, b] = logRange();
+    return download(`work-log_${a}${a === b ? "" : "_to_" + b}.csv`, csv(logEntries().slice().sort((x, y) => x.date.localeCompare(y.date)),
+      [["Date", r => r.date], ["Task", r => r.title], ["Task list", r => r.tasklist], ["Status", r => LABEL[r.status] || r.status], ["Note", r => r.note]]));
+  }
+  download(`tasks_${today()}.csv`, csv(sortTasks(visible()), [["Task", t => t.title], ["Task list", t => t.project], ["Status", t => LABEL[t.status]],
+    ["Priority", t => ({ high: "High", med: "Medium", low: "Low" }[t.priority])], ["Due date", t => t.date || ""],
+    ["Completed on", t => completedOn(t) || ""], ["Description", t => t.description]]));
+};
+$("#syncBtn").onclick = async e => {
+  const b = e.currentTarget; b.disabled = true;
+  try { if (!S.preview) await api("sync", { method: "POST" }); await load(); }
+  catch (err) { S.sync_error = String(err.message).slice(0, 200); render(); }
+  finally { b.disabled = false; }
+};
+
 /* ---------- shell ---------- */
 function render() {
   const open = S.tasks.filter(t => !closed(t)), counts = {
@@ -686,16 +757,20 @@ function render() {
   ).join("");
 
   const c = S.cursor, s = weekStart(c);
-  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects", tree: "Tree", map: "Map", analytics: "Analytics" }[S.view];
-  $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  $("#dateNav").style.display = ["today", "week", "month"].includes(S.view) ? "flex" : "none";
-  $("#range").textContent = S.view === "today" ? fmt(c, { day: "numeric", month: "short", year: "numeric" })
+  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects", tree: "Tree", map: "Map", analytics: "Analytics", worklog: "Work Log" }[S.view];
+  const ago = S.last_sync ? Math.round((Date.now() / 1000 - S.last_sync) / 60) : null;
+  $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    + (S.sync_error ? " · Zoho sync failed: " + S.sync_error : ago === null ? "" : ` · Zoho synced ${ago < 1 ? "just now" : ago + " min ago"}`);
+  $("#dateNav").style.display = ["today", "week", "month", "worklog"].includes(S.view) ? "flex" : "none";
+  const [ls, le] = logRange();
+  $("#range").textContent = S.view === "worklog" ? (ls === le ? fmt(parse(ls), { weekday: "short", day: "numeric", month: "short" }) : `${short(ls)} – ${short(le)}`)
+    : S.view === "today" ? fmt(c, { day: "numeric", month: "short", year: "numeric" })
     : S.view === "week" ? `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(addDays(s, 6), { day: "numeric", month: "short" })}` : fmt(c, { month: "long", year: "numeric" });
   $("#filterChip").innerHTML = S.filter ? `<span class="chip-filter">${esc(S.filter)}<button data-clear aria-label="Clear filter">${icon("x")}</button></span>` : "";
   charts.forEach(c => c.destroy()); charts = [];
   $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, week: weekView, month: monthView, projects: projectsView,
-    tree: treeView, map: mapView, analytics: analyticsView }[S.view]();
-  if (S.view !== "projects") $("#view").insertAdjacentHTML("afterbegin", statusFilter());
+    tree: treeView, map: mapView, analytics: analyticsView, worklog: worklogView }[S.view]();
+  if (!["projects", "worklog"].includes(S.view)) $("#view").insertAdjacentHTML("afterbegin", statusFilter());
   if (S.view === "map") drawMap();
   if (S.view === "analytics") drawCharts();
 }
@@ -714,12 +789,12 @@ function openDrawer(id) {
         <div class="field"><label for="f-status">Status</label><select id="f-status" name="status">${STATUS.map(([v, l]) => `<option value="${v}"${v === t.status ? " selected" : ""}>${l}</option>`).join("")}</select></div>
         <div class="field"><label for="f-priority">Priority</label><select id="f-priority" name="priority">${[["high", "High"], ["med", "Medium"], ["low", "Low"]].map(([v, l]) => `<option value="${v}"${v === t.priority ? " selected" : ""}>${l}</option>`).join("")}</select></div>
         <div class="field"><label for="f-date">Due date</label><input id="f-date" name="date" type="date" value="${t.date || ""}"></div>
-        <div class="field"><label for="f-project">Project</label><select id="f-project" name="project">${Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}">${areas[a].sort().map(n => `<option${n === t.project ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
+        <div class="field"><label for="f-project">Project</label><select id="f-project" name="project"${t.zoho_id ? ' disabled title="Move tasks between lists in Zoho"' : ""}>${Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}">${areas[a].sort().map(n => `<option${n === t.project ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
       </div>
       <div class="field"><label for="f-desc">Description</label><textarea id="f-desc" name="description">${esc(t.description)}</textarea></div>
       <span class="err" id="dErr"></span>
     </form>
-    <footer><button class="btn danger" id="dDel" type="button">Delete</button><div class="spacer"></div>
+    <footer><button class="btn danger" id="dDel" type="button">${t.zoho_id ? "Delete in Zoho" : "Delete"}</button><div class="spacer"></div>
       <button class="btn" data-close type="button">Cancel</button><button class="btn primary" form="dForm">Save</button></footer>
   </aside>`;
   S.editing = id;
@@ -742,9 +817,16 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level]");
+  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
   if (!el) return;
-  if (el.dataset.sf) { S.statuses.has(el.dataset.sf) ? S.statuses.delete(el.dataset.sf) : S.statuses.add(el.dataset.sf); saveStatuses(); }
+  if (el.id === "copyReport") {
+    const text = reportText(), msg = $("#copyMsg");
+    navigator.clipboard.writeText(text).then(() => { msg.textContent = "Copied. Paste it in WhatsApp or email."; },
+      () => { msg.textContent = "Couldn't copy automatically. Select the text below."; $("#view").insertAdjacentHTML("beforeend", `<textarea class="mselect" style="width:100%;min-height:200px;max-width:none">${esc(text)}</textarea>`); });
+    return;
+  }
+  if (el.dataset.span) { S.logSpan = el.dataset.span; store.set("vd-logspan", S.logSpan); }
+  else if (el.dataset.sf) { S.statuses.has(el.dataset.sf) ? S.statuses.delete(el.dataset.sf) : S.statuses.add(el.dataset.sf); saveStatuses(); }
   else if (el.dataset.sfp) { S.statuses = new Set(el.dataset.sfp === "all" ? STATUS.map(([s]) => s) : ACTIVE_S); saveStatuses(); }
   else if (el.dataset.level) { S.mapLevel = el.dataset.level; store.set("vd-maplevel", S.mapLevel); }
   else if (el.dataset.toggle) { const k = el.dataset.toggle; S.expanded.has(k) ? S.expanded.delete(k) : S.expanded.add(k); saveExpanded(); }
@@ -771,7 +853,7 @@ document.addEventListener("change", async e => {
 $("#q").addEventListener("input", e => { S.q = e.target.value.trim().toLowerCase(); render(); });
 function shift(n) {
   const c = S.cursor;
-  S.cursor = S.view === "today" ? addDays(c, n) : S.view === "week" ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
+  S.cursor = S.view === "today" || (S.view === "worklog" && S.logSpan === "day") ? addDays(c, n) : S.view === "week" ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
   render();
 }
 $("#prev").onclick = () => shift(-1);
