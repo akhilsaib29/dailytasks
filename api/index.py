@@ -219,7 +219,11 @@ Rules:
 - date: the day the work happened, YYYY-MM-DD (today unless they say yesterday or another day).
 - Write titles, descriptions, notes and the summary in {language}.
 {revision}
-Reply with only a JSON object:
+EXCEPTION: if the message is not a work update but asks to change the DATE of their previous update
+(e.g. "change that to yesterday", "move my last update to Monday", "that was for 5th October"),
+reply only {{"action": "redate", "date": "YYYY-MM-DD"}} with the new date resolved.
+
+Otherwise reply with only a JSON object:
 {{"summary": "one sentence", "date": "YYYY-MM-DD", "items": [{{"match": 12, "title": "", "description": "", "tasklist": "", "tags": [], "status": "", "priority": "med", "due": null, "note": ""}}]}}
 
 Notes:
@@ -335,8 +339,24 @@ def apply_item(it, d, meta):
         res = zoho_write("POST", "tasks", body)
         tid = (res.get("tasks") or res.get("result") or [res])[0]["id"] if not res.get("id") else res["id"]
     if it["note"]:
-        zoho("POST", f"tasks/{tid}/comments", {"comment": f"{d['date']}: {it['note']} (via Mumbo)"})
+        res = zoho("POST", f"tasks/{tid}/comments", {"comment": f"{d['date']}: {it['note']} (via Mumbo)"})
+        it["comment_id"] = ((res.get("result") or res.get("comments") or [{}])[0]).get("id")
     return tid
+
+
+def redate_comment(tid, cid, old, new):
+    """Swap the 'YYYY-MM-DD:' prefix on Mumbo's comment. Older items didn't store the comment id: find it."""
+    if not cid:
+        found = [c for c in zoho("GET", f"tasks/{tid}/comments").get("comments", [])
+                 if c["comment"].startswith(f"{old}:") and c["comment"].endswith("(via Mumbo)")]
+        if not found:
+            return
+        cid, text = found[0]["id"], found[0]["comment"]
+    else:
+        text = next((c["comment"] for c in zoho("GET", f"tasks/{tid}/comments").get("comments", []) if c["id"] == cid), "")
+        if not text.startswith(f"{old}:"):
+            return
+    zoho("PATCH", f"tasks/{tid}/comments/{cid}", {"comment": new + text[len(old):]})
 
 
 def report(arg):
@@ -423,11 +443,49 @@ def handle_message(msg):
         row = sb("PATCH", f"drafts?id=eq.{old['id']}",
                  {"draft": draft, "status": "pending", "source": old["source"] + "\n\nCorrection: " + text})[0]
     else:
-        draft = clean_draft(ask_llm(build_prompt(text, cands, meta)), cands, meta, today().isoformat())
+        raw = ask_llm(build_prompt(text, cands, meta))
+        if raw.get("action") == "redate":
+            return offer_redate(chat, text, valid_date(raw.get("date"), None))
+        draft = clean_draft(raw, cands, meta, today().isoformat())
         if not draft["items"]:
             return send(chat, "I couldn't find any work in that. Say what you did or need to do.")
         row = sb("POST", "drafts", {"chat_id": chat, "source": text, "draft": draft})[0]
     send(chat, format_draft(draft), buttons(row["id"]))
+
+
+def offer_redate(chat, text, new):
+    last = sb("GET", f"drafts?chat_id=eq.{chat}&status=eq.saved&draft->>items=not.is.null&draft->>action=is.null&order=id.desc&limit=1")
+    if not new or not last:
+        return send(chat, "I couldn't tell which update or which date. Try \"move my last update to yesterday\".")
+    target, old = last[0], last[0]["draft"]["date"]
+    if old == new:
+        return send(chat, f"Your last update is already dated {new}.")
+    items = [it for it in target["draft"]["items"] if it.get("applied")]
+    d = {"action": "redate", "target": target["id"], "from": old, "date": new, "summary": "", "items": []}
+    row = sb("POST", "drafts", {"chat_id": chat, "source": text, "draft": d})[0]
+    day = lambda x: datetime.strptime(x, "%Y-%m-%d").strftime("%a %d %b")
+    lines = [f"📅 Move your last update from <b>{day(old)}</b> to <b>{day(new)}</b>?", ""]
+    lines += [f"• {escape(it['title'])}" for it in items]
+    lines += ["", "This changes its work log date and Mumbo's dated comments in Zoho."]
+    send(chat, "\n".join(lines), [[{"text": "✅ Proceed", "callback_data": f"p:{row['id']}"},
+                                    {"text": "❌ Cancel", "callback_data": f"c:{row['id']}"}]])
+
+
+def apply_redate(chat, d):
+    target = sb("GET", f"drafts?id=eq.{d['target']}")[0]
+    old, new, failed = d["from"], d["date"], []
+    for it in target["draft"]["items"]:
+        if it.get("applied") and it.get("note"):
+            try:
+                redate_comment(it["applied"], it.get("comment_id"), old, new)
+            except Exception as e:
+                failed.append(f"{it['title']}: {str(e)[:120]}")
+    sb("PATCH", f"worklog?draft_id=eq.{d['target']}", {"date": new}, prefer="return=minimal")
+    sb("PATCH", f"drafts?id=eq.{d['target']}", {"draft": {**target["draft"], "date": new}}, prefer="return=minimal")
+    msg = f"✅ Moved to {datetime.strptime(new, '%Y-%m-%d'):%a %d %b}: work log and Zoho comments."
+    if failed:
+        msg += "\n⚠️ Zoho comments not changed:\n" + "\n".join(f"• {escape(f)}" for f in failed)
+    send(chat, msg)
 
 
 def proceed(chat, draft_id, d):
@@ -470,7 +528,9 @@ def handle_callback(cb):
     rows = sb("PATCH", f"drafts?id=eq.{draft_id}&status=eq.pending", {"status": status})
     if not rows:
         return
-    if action == "p":
+    if action == "p" and rows[0]["draft"].get("action") == "redate":
+        apply_redate(chat, rows[0]["draft"])
+    elif action == "p":
         proceed(chat, draft_id, rows[0]["draft"])
     elif action == "e":
         send(chat, "✏️ Send corrections as text or voice, e.g. \"the EDR one is for Udit, not Shreya\".")
@@ -638,4 +698,5 @@ if __name__ == "__main__":
                   "created_time": "2026-06-03T10:43:18.899Z"})
     assert (z["title"], z["project"], z["status"], z["priority"], z["date"]) == ("RAG", "Sales flow / Compliance", "in_progress", "med", "2026-10-11")
     assert valid_date("2026-13-40", "f") == "f"
+    assert '"action": "redate"' in build_prompt("x", cands, meta)
     print("self-check ok")
