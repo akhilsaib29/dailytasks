@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Voice Daybook</title>
+<title>Mumbo Daybook</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
@@ -115,6 +115,12 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .card .st{justify-self:start}
 .card.closed{opacity:.6}
 .card.logged{border-left:3px solid var(--primary)}
+.tl-kids{display:block;padding:0 0 10px 46px}
+.tl-kids ul,.tl-other{list-style:none;margin:0;padding:0 0 0 14px;border-left:2px solid var(--line-2);display:grid;gap:6px}
+.tl-other{margin:12px 16px}
+.tl-kids li,.tl-other li{display:flex;gap:8px;align-items:baseline;font-size:13px;color:var(--muted)}
+.tl-kids li > span:nth-child(2),.tl-other li > span:nth-child(2){flex:1;color:var(--fg)}
+.tl-dot{width:6px;height:6px;border-radius:50%;background:var(--primary);flex:none;margin-left:-18px;transform:translateY(-1px)}
 .tlog{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:13px}
 .tlog li{display:grid;grid-template-columns:64px 1fr;gap:8px}
 .tlog b{font:500 12px var(--mono);color:var(--muted)}
@@ -268,7 +274,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 </head>
 <body>
 <form class="gate" id="gate" hidden>
-  <h1>Voice Daybook</h1>
+  <h1>Mumbo Daybook</h1>
   <label for="key" class="sub">Dashboard key</label>
   <input id="key" type="password" autocomplete="current-password" required>
   <button class="btn primary">Open dashboard</button>
@@ -277,7 +283,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 
 <div class="shell" id="app" hidden>
   <aside class="side" aria-label="Navigation">
-    <div class="brand"><span class="logo" data-icon="mic"></span>Voice Daybook</div>
+    <div class="brand"><span class="logo" data-icon="mic"></span>Mumbo Daybook</div>
     <nav class="nav" id="views"></nav>
     <nav class="nav" id="tree" aria-label="Areas and projects"></nav>
   </aside>
@@ -499,18 +505,31 @@ function weekView() {
   const s = weekStart(S.cursor), on = tasksByDay();
   return `<div class="week">${[...Array(7)].map((_, i) => {
     const d = addDays(s, i), k = iso(d), list = on(k);
-    return `<div class="day${k === today() ? " today" : ""}"><button data-goto="${k}"><b>${fmt(d, { weekday: "short" })}</b><span>${fmt(d, { day: "numeric", month: "short" })}</span></button>
+    return `<div class="day${k === today() ? " today" : ""}"><button data-tday="${k}"><b>${fmt(d, { weekday: "short" })}</b><span>${fmt(d, { day: "numeric", month: "short" })}</span></button>
       ${list.map(([t, worked]) => card(t, { compact: true, worked })).join("") || `<span class="more">—</span>`}</div>`;
   }).join("")}</div>`;
 }
 
 const scopeSelect = () => `<select class="mselect scope" aria-label="Filter by area or project"><option value="">All areas & projects</option>${scopeOptions()}</select>`;
 
+function taskDayView() {
+  const k = iso(S.cursor), list = tasksByDay()(k), titles = new Set(list.map(([t]) => t.title));
+  const logs = S.worklog.filter(r => r.date === k).sort((a, b) => a.id - b.id);
+  const other = logs.filter(r => !titles.has(r.title) && (!S.filter || r.tasklist === S.filter || (r.tasklist && areaOf(r.tasklist) === S.filter)));
+  const sub = r => `<li><span class="tl-dot"></span><span>${esc(r.note || r.title)}</span>${logStatus(r)}</li>`;
+  return `<section class="section"><header><h2>Tasks</h2><span class="n">${list.length}</span></header>
+    ${list.length ? `<ul class="list">${list.map(([t]) => {
+      const mine = logs.filter(r => r.title === t.title);
+      return row(t) + (mine.length ? `<li class="tl-kids"><ul>${mine.map(sub).join("")}</ul></li>` : "");
+    }).join("")}</ul>` : `<p class="empty">No tasks on this day.</p>`}</section>
+  ${other.length ? `<section class="section"><header><h2>Other work logged</h2><span class="n">${other.length}</span></header><ul class="tl-other">${other.map(sub).join("")}</ul></section>` : ""}`;
+}
+
 function tasksView() {
-  const body = S.taskSpan === "week" ? weekView() : S.taskSpan === "month" ? monthView()
+  const body = S.taskSpan === "day" ? taskDayView() : S.taskSpan === "week" ? weekView() : S.taskSpan === "month" ? monthView()
     : section("Tasks", visible(), { groupBy: true, empty: "No tasks match these filters." });
   return `<div class="toolbar"><div class="seg" role="group" aria-label="Range">
-    ${[["list", "List"], ["week", "Week"], ["month", "Month"]].map(([v, l]) => `<button data-tspan="${v}" aria-pressed="${S.taskSpan === v}">${l}</button>`).join("")}</div>
+    ${[["list", "List"], ["day", "Day"], ["week", "Week"], ["month", "Month"]].map(([v, l]) => `<button data-tspan="${v}" aria-pressed="${S.taskSpan === v}">${l}</button>`).join("")}</div>
     ${scopeSelect()}</div>${body}`;
 }
 
@@ -520,7 +539,7 @@ function monthView() {
   return `<div class="month">${head}${[...Array(42)].map((_, i) => {
     const d = addDays(s, i), k = iso(d);
     const minis = on(k).map(([t, worked]) => `<span class="mini${closed(t) ? " closed" : ""}${worked ? " logged" : ""}" style="--h:${hue(t.project)}">${esc(t.title)}</span>`);
-    return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-goto="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${minis.length} items">
+    return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-tday="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${minis.length} items">
       <span class="n">${d.getDate()}</span>${minis.slice(0, 3).join("")}
       ${minis.length > 3 ? `<span class="more" style="text-align:left;padding:0">+${minis.length - 3} more</span>` : ""}</button>`;
   }).join("")}</div>`;
@@ -823,6 +842,7 @@ function render() {
   const [ls, le] = logRange();
   $("#range").textContent = S.view === "worklog" ? (ls === le ? fmt(parse(ls), { weekday: "short", day: "numeric", month: "short" }) : `${short(ls)} – ${short(le)}`)
     : S.view === "today" ? fmt(c, { day: "numeric", month: "short", year: "numeric" })
+    : span === "day" ? fmt(c, { weekday: "short", day: "numeric", month: "short", year: "numeric" })
     : span === "week" ? `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(addDays(s, 6), { day: "numeric", month: "short" })}` : fmt(c, { month: "long", year: "numeric" });
   $("#filterChip").innerHTML = S.filter ? `<span class="chip-filter">${esc(S.filter)}<button data-clear aria-label="Clear filter">${icon("x")}</button></span>` : "";
   charts.forEach(c => c.destroy()); charts = [];
@@ -880,7 +900,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-tspan],[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
+  const el = e.target.closest("[data-tday],[data-tspan],[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
   if (!el) return;
   if (el.id === "copyReport") {
     const text = reportText(), msg = $("#copyMsg");
@@ -888,7 +908,8 @@ document.addEventListener("click", e => {
       () => { msg.textContent = "Couldn't copy automatically. Select the text below."; $("#view").insertAdjacentHTML("beforeend", `<textarea class="mselect" style="width:100%;min-height:200px;max-width:none">${esc(text)}</textarea>`); });
     return;
   }
-  if (el.dataset.tspan) { S.taskSpan = el.dataset.tspan; store.set("vd-taskspan", S.taskSpan); }
+  if (el.dataset.tday) { S.cursor = parse(el.dataset.tday); S.taskSpan = "day"; store.set("vd-taskspan", "day"); }
+  else if (el.dataset.tspan) { S.taskSpan = el.dataset.tspan; store.set("vd-taskspan", S.taskSpan); }
   else if (el.dataset.logday) { S.cursor = parse(el.dataset.logday); S.logSpan = "day"; store.set("vd-logspan", "day"); }
   else if (el.dataset.span) { S.logSpan = el.dataset.span; store.set("vd-logspan", S.logSpan); }
   else if (el.dataset.sf) { S.statuses.has(el.dataset.sf) ? S.statuses.delete(el.dataset.sf) : S.statuses.add(el.dataset.sf); saveStatuses(); }
@@ -916,9 +937,10 @@ document.addEventListener("change", async e => {
   try { await save(Number(e.target.dataset.id), { status: e.target.value }); } catch { load(); }
 });
 $("#q").addEventListener("input", e => { S.q = e.target.value.trim().toLowerCase(); render(); });
+const span = () => S.view === "tasks" ? S.taskSpan : S.view === "worklog" ? S.logSpan : S.view;
 function shift(n) {
   const c = S.cursor;
-  S.cursor = S.view === "today" || (S.view === "worklog" && S.logSpan === "day") ? addDays(c, n) : (S.view === "tasks" && S.taskSpan === "week") || (S.view === "worklog" && S.logSpan === "week") ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
+  S.cursor = S.view === "today" || span() === "day" ? addDays(c, n) : span() === "week" ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
   render();
 }
 $("#prev").onclick = () => shift(-1);

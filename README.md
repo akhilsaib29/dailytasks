@@ -1,4 +1,4 @@
-# Voice Daybook
+# Mumbo Daybook
 
 Send a voice note or text to your Telegram bot, in any language. It drafts projects and tasks (with descriptions, dates and priority) and saves them only after you tap **✅ Proceed**. The dashboard shows Today, Backlog, Board, Week, Month and Projects views, organized as Area > Project > Task.
 
