@@ -457,7 +457,9 @@ def update_task(tid: int, body: dict, x_key: str = Header("")):
         patch["date"] = valid_date(patch["date"], None)
     if not patch:
         return {"ok": True}
-    row = sb("GET", f"tasks?id=eq.{tid}&select=done")[0]
+    row = sb("GET", f"tasks?id=eq.{tid}&select=title,done")[0]
+    if patch.get("title") and patch["title"] != row["title"]:  # work log links to tasks by title
+        sb("PATCH", f"worklog?title=eq.{quote(row['title'])}", {"title": patch["title"]}, prefer="return=minimal")
     if "status" in patch:
         patch["done"] = patch["status"] in ("done", "cancelled")
         if row["done"] != patch["done"]:

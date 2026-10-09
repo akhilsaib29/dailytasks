@@ -115,6 +115,9 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .card .st{justify-self:start}
 .card.closed{opacity:.6}
 .card.logged{border-left:3px solid var(--primary)}
+.tlog{list-style:none;margin:0;padding:0;display:grid;gap:8px;font-size:13px}
+.tlog li{display:grid;grid-template-columns:64px 1fr;gap:8px}
+.tlog b{font:500 12px var(--mono);color:var(--muted)}
 .more{font-size:12px;color:var(--muted);text-align:center;padding:4px;margin:0}
 
 .week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
@@ -424,7 +427,7 @@ const row = t => `<li class="row${closed(t) ? " closed" : ""}">${statusSelect(t)
   <button class="t" data-open="${t.id}"><div class="title">${esc(t.title)}</div>${t.description ? `<div class="desc">${esc(t.description)}</div>` : ""}</button>
   ${projChip(t.project)}${priBars(t.priority)}${dueLabel(t)}</li>`;
 
-const card = (t, opts = {}) => `<div class="card${closed(t) ? " closed" : ""}">
+const card = (t, opts = {}) => `<div class="card${closed(t) ? " closed" : ""}${opts.worked ? " logged" : ""}">
   <button class="t" data-open="${t.id}">${esc(t.title)}</button>
   <div class="meta">${projChip(t.project)}${opts.compact ? "" : `<span style="display:flex;gap:8px;align-items:center">${priBars(t.priority)}${dueLabel(t)}</span>`}</div>
   ${opts.status ? statusSelect(t) : ""}</div>`;
@@ -478,12 +481,26 @@ function boardView() {
   }).join("")}</div>`;
 }
 
+// Calendar day -> tasks: each task sits on its due date (or the day it was created), plus every day you logged work on it.
+// ponytail: work log links to its task by title; the backend renames log entries when a task is renamed
+function tasksByDay() {
+  const idx = {}, byTitle = new Map(), all = visible();
+  const add = (k, t, worked) => { const m = idx[k] ||= new Map(); if (worked || !m.has(t.id)) m.set(t.id, worked); };
+  for (const t of all) {
+    byTitle.set(t.title, t);
+    const k = t.date || (t.created_at ? iso(new Date(t.created_at)) : null);
+    if (k) add(k, t, false);
+  }
+  for (const r of S.worklog) if (byTitle.has(r.title)) add(r.date, byTitle.get(r.title), true);
+  return k => { const m = idx[k]; return m ? sortTasks(all.filter(t => m.has(t.id))).map(t => [t, m.get(t.id)]) : []; };
+}
+
 function weekView() {
-  const s = weekStart(S.cursor), all = visible();
+  const s = weekStart(S.cursor), on = tasksByDay();
   return `<div class="week">${[...Array(7)].map((_, i) => {
-    const d = addDays(s, i), k = iso(d), list = sortTasks(all.filter(t => t.date === k));
+    const d = addDays(s, i), k = iso(d), list = on(k);
     return `<div class="day${k === today() ? " today" : ""}"><button data-goto="${k}"><b>${fmt(d, { weekday: "short" })}</b><span>${fmt(d, { day: "numeric", month: "short" })}</span></button>
-      ${list.map(t => card(t, { compact: true })).join("") || `<span class="more">—</span>`}</div>`;
+      ${list.map(([t, worked]) => card(t, { compact: true, worked })).join("") || `<span class="more">—</span>`}</div>`;
   }).join("")}</div>`;
 }
 
@@ -498,11 +515,11 @@ function tasksView() {
 }
 
 function monthView() {
-  const first = new Date(S.cursor.getFullYear(), S.cursor.getMonth(), 1), s = weekStart(first), all = visible();
+  const first = new Date(S.cursor.getFullYear(), S.cursor.getMonth(), 1), s = weekStart(first), on = tasksByDay();
   const head = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(x => `<div class="dow">${x}</div>`).join("");
   return `<div class="month">${head}${[...Array(42)].map((_, i) => {
-    const d = addDays(s, i), k = iso(d), list = sortTasks(all.filter(t => t.date === k));
-    const minis = list.map(t => `<span class="mini${closed(t) ? " closed" : ""}" style="--h:${hue(t.project)}">${esc(t.title)}</span>`);
+    const d = addDays(s, i), k = iso(d);
+    const minis = on(k).map(([t, worked]) => `<span class="mini${closed(t) ? " closed" : ""}${worked ? " logged" : ""}" style="--h:${hue(t.project)}">${esc(t.title)}</span>`);
     return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-goto="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${minis.length} items">
       <span class="n">${d.getDate()}</span>${minis.slice(0, 3).join("")}
       ${minis.length > 3 ? `<span class="more" style="text-align:left;padding:0">+${minis.length - 3} more</span>` : ""}</button>`;
@@ -833,6 +850,11 @@ function openDrawer(id) {
         <div class="field"><label for="f-project">Project</label><select id="f-project" name="project">${Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}">${areas[a].sort().map(n => `<option${n === t.project ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
       </div>
       <div class="field"><label for="f-desc">Description</label><textarea id="f-desc" name="description">${esc(t.description)}</textarea></div>
+      <div class="field"><label>Work log</label>${(() => {
+        const logs = S.worklog.filter(r => r.title === t.title).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+        return logs.length ? `<ul class="tlog">${logs.map(r => `<li><b>${short(r.date)}</b><span>${esc(r.note || "Worked on it")}${r.status ? ` · ${LABEL[r.status] || esc(r.status)}` : ""}</span></li>`).join("")}</ul>`
+          : `<p class="empty" style="margin:0">No work logged on this task yet.</p>`;
+      })()}</div>
       <span class="err" id="dErr"></span>
     </form>
     <footer><button class="btn danger" id="dDel" type="button">Delete</button><div class="spacer"></div>
