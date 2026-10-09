@@ -346,7 +346,7 @@ const SLABEL = Object.fromEntries(STATUS);
 const SVAR = { open: "--s-open", in_progress: "--s-progress", in_review: "--s-review", on_hold: "--s-hold", done: "--s-done", cancelled: "--s-cancel" };
 const PRI = { high: 0, med: 1, low: 2 };
 const SORDER = { in_progress: 0, in_review: 1, open: 2, on_hold: 3, done: 4, cancelled: 5 };
-const VIEWS = [["today", "Today", "sun", "Plan"], ["worklog", "Work Log", "log", "Plan"], ["backlog", "Backlog", "inbox", "Plan"], ["week", "Week", "week", "Plan"], ["month", "Month", "month", "Plan"],
+const VIEWS = [["today", "Today", "sun", "Plan"], ["worklog", "Work Log", "log", "Plan"], ["backlog", "Backlog", "inbox", "Plan"], ["tasks", "Tasks", "week", "Plan"],
   ["board", "Board", "board", "Organize"], ["tree", "Tree", "tree", "Organize"], ["projects", "Projects", "folder", "Organize"],
   ["map", "Map", "map", "Insights"], ["analytics", "Analytics", "chart", "Insights"]];
 let charts = [];
@@ -360,6 +360,8 @@ S.expanded = new Set(JSON.parse(store.get("vd-expanded") || "null") || []);
 const ACTIVE_S = ["open", "in_progress", "in_review", "on_hold"];
 S.statuses = new Set(JSON.parse(store.get("vd-statuses") || "null") || STATUS.map(([s]) => s));
 S.mapLevel = store.get("vd-maplevel") || "tasks";
+S.taskSpan = store.get("vd-taskspan") || "list";
+if (S.view === "week" || S.view === "month") { S.taskSpan = S.view; S.view = "tasks"; }  // old separate Week/Month views
 const completedOn = t => t.completed_at ? String(t.completed_at).slice(0, 10) : (closed(t) ? t.date : null);
 const closed = t => t.status === "done" || t.status === "cancelled";
 const areaOf = name => (S.projects.find(p => p.name === name) || {}).area || "General";
@@ -483,6 +485,16 @@ function weekView() {
     return `<div class="day${k === today() ? " today" : ""}"><button data-goto="${k}"><b>${fmt(d, { weekday: "short" })}</b><span>${fmt(d, { day: "numeric", month: "short" })}</span></button>
       ${list.map(t => card(t, { compact: true })).join("") || `<span class="more">—</span>`}</div>`;
   }).join("")}</div>`;
+}
+
+const scopeSelect = () => `<select class="mselect scope" aria-label="Filter by area or project"><option value="">All areas & projects</option>${scopeOptions()}</select>`;
+
+function tasksView() {
+  const body = S.taskSpan === "week" ? weekView() : S.taskSpan === "month" ? monthView()
+    : section("Tasks", visible(), { groupBy: true, empty: "No tasks match these filters." });
+  return `<div class="toolbar"><div class="seg" role="group" aria-label="Range">
+    ${[["list", "List"], ["week", "Week"], ["month", "Month"]].map(([v, l]) => `<button data-tspan="${v}" aria-pressed="${S.taskSpan === v}">${l}</button>`).join("")}</div>
+    ${scopeSelect()}</div>${body}`;
 }
 
 function monthView() {
@@ -686,7 +698,7 @@ function logRange() {
   if (S.logSpan === "month") { const c = S.cursor; return [iso(new Date(c.getFullYear(), c.getMonth(), 1)), iso(new Date(c.getFullYear(), c.getMonth() + 1, 0))]; }
   return [iso(S.cursor), iso(S.cursor)];
 }
-const logEntries = () => { const [a, b] = logRange(); return S.worklog.filter(w => w.date >= a && w.date <= b && (!S.filter || w.tasklist === S.filter)); };
+const logEntries = () => { const [a, b] = logRange(); return S.worklog.filter(w => w.date >= a && w.date <= b && (!S.filter || w.tasklist === S.filter || (w.tasklist && areaOf(w.tasklist) === S.filter))); };
 
 function reportText() {
   const [a, b] = logRange(), rows = logEntries().slice().sort((x, y) => x.date.localeCompare(y.date) || x.id - y.id);
@@ -734,7 +746,7 @@ function worklogView() {
   const days = Object.keys(byDay).sort().reverse();
   return `<div class="toolbar"><div class="seg" role="group" aria-label="Range">
       ${[["day", "Day"], ["week", "Week"], ["month", "Month"]].map(([v, l]) => `<button data-span="${v}" aria-pressed="${S.logSpan === v}">${l}</button>`).join("")}</div>
-    <button class="btn primary" id="copyReport">${icon("copy")}Copy report for ED</button><span class="sub" id="copyMsg" role="status"></span></div>
+    ${scopeSelect()}<button class="btn primary" id="copyReport">${icon("copy")}Copy report for ED</button><span class="sub" id="copyMsg" role="status"></span></div>
   ${S.logSpan !== "day" ? logCalendar(rows) : days.length ? days.map(d => `<section class="section"><header><h2>${fmt(parse(d), { weekday: "long", day: "numeric", month: "long" })}</h2><span class="n">${byDay[d].length}</span></header>
     <ul class="list">${byDay[d].map(r => {
       const t = S.tasks.find(x => x.title === r.title);
@@ -773,7 +785,7 @@ $("#syncBtn").onclick = async e => {
 function render() {
   const open = S.tasks.filter(t => !closed(t)), counts = {
     today: open.filter(t => t.date && t.date <= today()).length, backlog: open.filter(t => !t.date).length,
-    board: open.length, projects: S.projects.length };
+    board: open.length, tasks: open.length, projects: S.projects.length };
   $("#views").innerHTML = VIEWS.map(([v, l, ic, grp], i) => (i === 0 || VIEWS[i - 1][3] !== grp ? `<div class="nav-label"${i ? ' style="margin-top:10px"' : ""}>${grp}</div>` : "") +
     `<button data-view="${v}" aria-current="${S.view === v}">${icon(ic)}${l}<span class="count">${counts[v] || ""}</span></button>`).join("");
   $("#mviews").innerHTML = VIEWS.map(([v, l]) => `<button data-view="${v}" aria-current="${S.view === v}">${l}</button>`).join("");
@@ -787,16 +799,17 @@ function render() {
   ).join("");
 
   const c = S.cursor, s = weekStart(c);
-  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects", tree: "Tree", map: "Map", analytics: "Analytics", worklog: "Work Log" }[S.view];
+  $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", tasks: "Tasks", projects: "Projects", tree: "Tree", map: "Map", analytics: "Analytics", worklog: "Work Log" }[S.view];
   $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-  $("#dateNav").style.display = ["today", "week", "month", "worklog"].includes(S.view) ? "flex" : "none";
+  const span = S.view === "tasks" ? S.taskSpan : S.view === "worklog" ? S.logSpan : S.view;
+  $("#dateNav").style.display = ["today", "week", "month", "day"].includes(span) ? "flex" : "none";
   const [ls, le] = logRange();
   $("#range").textContent = S.view === "worklog" ? (ls === le ? fmt(parse(ls), { weekday: "short", day: "numeric", month: "short" }) : `${short(ls)} – ${short(le)}`)
     : S.view === "today" ? fmt(c, { day: "numeric", month: "short", year: "numeric" })
-    : S.view === "week" ? `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(addDays(s, 6), { day: "numeric", month: "short" })}` : fmt(c, { month: "long", year: "numeric" });
+    : span === "week" ? `${fmt(s, { day: "numeric", month: "short" })} – ${fmt(addDays(s, 6), { day: "numeric", month: "short" })}` : fmt(c, { month: "long", year: "numeric" });
   $("#filterChip").innerHTML = S.filter ? `<span class="chip-filter">${esc(S.filter)}<button data-clear aria-label="Clear filter">${icon("x")}</button></span>` : "";
   charts.forEach(c => c.destroy()); charts = [];
-  $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, week: weekView, month: monthView, projects: projectsView,
+  $("#view").innerHTML = { today: todayView, backlog: backlogView, board: boardView, tasks: tasksView, projects: projectsView,
     tree: treeView, map: mapView, analytics: analyticsView, worklog: worklogView }[S.view]();
   if (!["projects", "worklog"].includes(S.view)) $("#view").insertAdjacentHTML("afterbegin", statusFilter());
   if (S.view === "map") drawMap();
@@ -845,7 +858,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
+  const el = e.target.closest("[data-tspan],[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
   if (!el) return;
   if (el.id === "copyReport") {
     const text = reportText(), msg = $("#copyMsg");
@@ -853,7 +866,8 @@ document.addEventListener("click", e => {
       () => { msg.textContent = "Couldn't copy automatically. Select the text below."; $("#view").insertAdjacentHTML("beforeend", `<textarea class="mselect" style="width:100%;min-height:200px;max-width:none">${esc(text)}</textarea>`); });
     return;
   }
-  if (el.dataset.logday) { S.cursor = parse(el.dataset.logday); S.logSpan = "day"; store.set("vd-logspan", "day"); }
+  if (el.dataset.tspan) { S.taskSpan = el.dataset.tspan; store.set("vd-taskspan", S.taskSpan); }
+  else if (el.dataset.logday) { S.cursor = parse(el.dataset.logday); S.logSpan = "day"; store.set("vd-logspan", "day"); }
   else if (el.dataset.span) { S.logSpan = el.dataset.span; store.set("vd-logspan", S.logSpan); }
   else if (el.dataset.sf) { S.statuses.has(el.dataset.sf) ? S.statuses.delete(el.dataset.sf) : S.statuses.add(el.dataset.sf); saveStatuses(); }
   else if (el.dataset.sfp) { S.statuses = new Set(el.dataset.sfp === "all" ? STATUS.map(([s]) => s) : ACTIVE_S); saveStatuses(); }
@@ -875,14 +889,14 @@ document.addEventListener("click", e => {
 const saveStatuses = () => store.set("vd-statuses", JSON.stringify([...S.statuses]));
 const saveExpanded = () => store.set("vd-expanded", JSON.stringify([...S.expanded]));
 document.addEventListener("change", async e => {
-  if (e.target.id === "mapScope") { S.filter = e.target.value || null; return render(); }
+  if (e.target.id === "mapScope" || e.target.classList.contains("scope")) { S.filter = e.target.value || null; return render(); }
   if (!e.target.matches("select.st")) return;
   try { await save(Number(e.target.dataset.id), { status: e.target.value }); } catch { load(); }
 });
 $("#q").addEventListener("input", e => { S.q = e.target.value.trim().toLowerCase(); render(); });
 function shift(n) {
   const c = S.cursor;
-  S.cursor = S.view === "today" || (S.view === "worklog" && S.logSpan === "day") ? addDays(c, n) : S.view === "week" || (S.view === "worklog" && S.logSpan === "week") ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
+  S.cursor = S.view === "today" || (S.view === "worklog" && S.logSpan === "day") ? addDays(c, n) : (S.view === "tasks" && S.taskSpan === "week") || (S.view === "worklog" && S.logSpan === "week") ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
   render();
 }
 $("#prev").onclick = () => shift(-1);
