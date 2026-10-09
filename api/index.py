@@ -20,6 +20,8 @@ PRIORITIES = ("high", "med", "low")
 # Names speech-to-text gets wrong. Right spelling -> what it was heard as. Extend via VOCAB env: "Name=miss1|miss2;..."
 VOCAB = {"Zoho": ["Jovo", "Joho", "Zojo", "Joe Ho"], "Mumbo": ["Mambo", "Mumbu"], "Suyash": ["Suyas", "Sooyash"],
          **{k.strip(): v.split("|") for k, _, v in (x.partition("=") for x in E("VOCAB").split(";")) if k.strip()}}
+MISHEARD = re.compile(r"\b(" + "|".join(re.escape(w) for v in VOCAB.values() for w in v) + r")\b", re.I)
+RIGHT = {w.lower(): k for k, v in VOCAB.items() for w in v}
 MARK = {"done": "✅", "in_progress": "🔄", "in_review": "👀", "on_hold": "⏸", "cancelled": "✖️", "open": "☐"}
 LABEL = {"open": "Open", "in_progress": "In progress", "in_review": "In review", "on_hold": "On hold",
          "done": "Done", "cancelled": "Cancelled"}
@@ -50,6 +52,10 @@ def send(chat, text, buttons=None):
     return tg("sendMessage", **p)
 
 
+def fix_names(text):
+    return MISHEARD.sub(lambda m: RIGHT[m.group(0).lower()], text)
+
+
 def groq_auth():
     return {"Authorization": f"Bearer {E('GROQ_API_KEY')}"}
 
@@ -60,7 +66,7 @@ def transcribe(data, filename):
                         "prompt": "Work update mentioning " + ", ".join(VOCAB) + "."})
     if r.is_error:
         raise RuntimeError(f"Groq {r.status_code}: {r.text[:300]}")
-    return r.json()["text"].strip()
+    return fix_names(r.json()["text"].strip())
 
 
 def ask_llm(prompt):
@@ -491,4 +497,5 @@ if __name__ == "__main__":
     assert valid_date("2026-13-40", "f") == "f"
     assert '"action": "redate"' in build_prompt("x", cands, lists)
     assert "Zoho (never Jovo" in build_prompt("x", cands, lists)
+    assert fix_names("Hi Mambo, the jovo CRM with Suyas") == "Hi Mumbo, the Zoho CRM with Suyash"
     print("self-check ok")
