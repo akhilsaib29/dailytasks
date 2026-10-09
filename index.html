@@ -114,6 +114,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .card .meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:space-between}
 .card .st{justify-self:start}
 .card.closed{opacity:.6}
+.card.logged{border-left:3px solid var(--primary)}
 .more{font-size:12px;color:var(--muted);text-align:center;padding:4px;margin:0}
 
 .week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}
@@ -131,6 +132,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .cell.today .n{background:var(--primary);color:var(--on-primary);border-radius:99px;width:24px;height:24px;display:grid;place-items:center}
 .mini{font-size:11px;padding:2px 6px;border-radius:4px;background:color-mix(in srgb,hsl(var(--h) 60% 50%) 14%,transparent);border-left:2px solid hsl(var(--h) 60% 50%);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mini.closed{opacity:.5;text-decoration:line-through}
+.mini.logged{border-left-color:var(--primary);font-weight:500}
 
 .area-block{display:grid;gap:12px}
 .area-block > h2{display:flex;align-items:baseline;gap:10px;margin:0;font-size:16px}
@@ -488,9 +490,10 @@ function monthView() {
   const head = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(x => `<div class="dow">${x}</div>`).join("");
   return `<div class="month">${head}${[...Array(42)].map((_, i) => {
     const d = addDays(s, i), k = iso(d), list = sortTasks(all.filter(t => t.date === k));
-    return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-goto="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${list.length} tasks">
-      <span class="n">${d.getDate()}</span>${list.slice(0, 3).map(t => `<span class="mini${closed(t) ? " closed" : ""}" style="--h:${hue(t.project)}">${esc(t.title)}</span>`).join("")}
-      ${list.length > 3 ? `<span class="more" style="text-align:left;padding:0">+${list.length - 3} more</span>` : ""}</button>`;
+    const minis = list.map(t => `<span class="mini${closed(t) ? " closed" : ""}" style="--h:${hue(t.project)}">${esc(t.title)}</span>`);
+    return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-goto="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${minis.length} items">
+      <span class="n">${d.getDate()}</span>${minis.slice(0, 3).join("")}
+      ${minis.length > 3 ? `<span class="more" style="text-align:left;padding:0">+${minis.length - 3} more</span>` : ""}</button>`;
   }).join("")}</div>`;
 }
 
@@ -680,6 +683,7 @@ function drawCharts() {
 S.logSpan = store.get("vd-logspan") || "day";
 function logRange() {
   if (S.logSpan === "week") { const s = weekStart(S.cursor); return [iso(s), iso(addDays(s, 6))]; }
+  if (S.logSpan === "month") { const c = S.cursor; return [iso(new Date(c.getFullYear(), c.getMonth(), 1)), iso(new Date(c.getFullYear(), c.getMonth() + 1, 0))]; }
   return [iso(S.cursor), iso(S.cursor)];
 }
 const logEntries = () => { const [a, b] = logRange(); return S.worklog.filter(w => w.date >= a && w.date <= b && (!S.filter || w.tasklist === S.filter)); };
@@ -692,9 +696,36 @@ function reportText() {
   let day = null;
   for (const r of rows) {
     if (r.date !== day) { day = r.date; out.push("", fmt(parse(day), { weekday: "short", day: "numeric", month: "short" })); }
-    out.push(`• ${r.title} (${r.tasklist}) — ${LABEL[r.status] || r.status}${r.note ? "\n   " + r.note : ""}`);
+    out.push(`• ${r.title}${r.tasklist ? ` (${r.tasklist})` : ""}${r.status ? " — " + (LABEL[r.status] || r.status) : ""}${r.note ? "\n   " + r.note : ""}`);
   }
   return out.join("\n");
+}
+
+const logStatus = r => r.status ? `<span class="st" data-s="${esc(r.status)}" style="cursor:default">${LABEL[r.status] || esc(r.status)}</span>` : "";
+const logCard = r => {
+  const t = S.tasks.find(x => x.title === r.title);
+  return `<div class="card logged">${t ? `<button class="t" data-open="${t.id}">` : `<div class="t">`}${esc(r.title)}${t ? "</button>" : "</div>"}
+  ${r.tasklist || r.status ? `<div class="meta">${r.tasklist ? projChip(r.tasklist) : "<span></span>"}${logStatus(r)}</div>` : ""}</div>`;
+};
+
+function logCalendar(rows) {
+  const byDay = {};
+  for (const r of rows) (byDay[r.date] ||= []).push(r);
+  const head = (d, k) => `<button data-logday="${k}"><b>${fmt(d, { weekday: "short" })}</b><span>${fmt(d, { day: "numeric", month: "short" })}</span></button>`;
+  if (S.logSpan === "week") {
+    const s = weekStart(S.cursor);
+    return `<div class="week">${[...Array(7)].map((_, i) => {
+      const d = addDays(s, i), k = iso(d);
+      return `<div class="day${k === today() ? " today" : ""}">${head(d, k)}${(byDay[k] || []).map(logCard).join("") || `<span class="more">—</span>`}</div>`;
+    }).join("")}</div>`;
+  }
+  const first = new Date(S.cursor.getFullYear(), S.cursor.getMonth(), 1), s = weekStart(first);
+  return `<div class="month">${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(x => `<div class="dow">${x}</div>`).join("")}${[...Array(42)].map((_, i) => {
+    const d = addDays(s, i), k = iso(d), list = d.getMonth() === first.getMonth() ? byDay[k] || [] : [];
+    return `<button class="cell${d.getMonth() !== first.getMonth() ? " out" : ""}${k === today() ? " today" : ""}" data-logday="${k}" aria-label="${fmt(d, { day: "numeric", month: "long" })}, ${list.length} entries">
+      <span class="n">${d.getDate()}</span>${list.slice(0, 3).map(r => `<span class="mini logged" style="--h:${hue(r.tasklist || "")}">${esc(r.title)}</span>`).join("")}
+      ${list.length > 3 ? `<span class="more" style="text-align:left;padding:0">+${list.length - 3} more</span>` : ""}</button>`;
+  }).join("")}</div>`;
 }
 
 function worklogView() {
@@ -702,14 +733,14 @@ function worklogView() {
   for (const r of rows) (byDay[r.date] ||= []).push(r);
   const days = Object.keys(byDay).sort().reverse();
   return `<div class="toolbar"><div class="seg" role="group" aria-label="Range">
-      <button data-span="day" aria-pressed="${S.logSpan === "day"}">Day</button><button data-span="week" aria-pressed="${S.logSpan === "week"}">Week</button></div>
+      ${[["day", "Day"], ["week", "Week"], ["month", "Month"]].map(([v, l]) => `<button data-span="${v}" aria-pressed="${S.logSpan === v}">${l}</button>`).join("")}</div>
     <button class="btn primary" id="copyReport">${icon("copy")}Copy report for ED</button><span class="sub" id="copyMsg" role="status"></span></div>
-  ${days.length ? days.map(d => `<section class="section"><header><h2>${fmt(parse(d), { weekday: "long", day: "numeric", month: "long" })}</h2><span class="n">${byDay[d].length}</span></header>
+  ${S.logSpan !== "day" ? logCalendar(rows) : days.length ? days.map(d => `<section class="section"><header><h2>${fmt(parse(d), { weekday: "long", day: "numeric", month: "long" })}</h2><span class="n">${byDay[d].length}</span></header>
     <ul class="list">${byDay[d].map(r => {
       const t = S.tasks.find(x => x.title === r.title);
-      return `<li class="row"><span class="st" data-s="${esc(r.status)}" style="cursor:default">${LABEL[r.status] || esc(r.status)}</span>
+      return `<li class="row">${logStatus(r) || "<span></span>"}
         ${t ? `<button class="t" data-open="${t.id}">` : `<div class="t">`}<div class="title">${esc(r.title)}</div>${r.note ? `<div class="desc" style="white-space:normal">${esc(r.note)}</div>` : ""}${t ? "</button>" : "</div>"}
-        ${projChip(r.tasklist || "")}<span></span><span></span></li>`;
+        ${r.tasklist ? projChip(r.tasklist) : "<span></span>"}<span></span><span></span></li>`;
     }).join("")}</ul></section>`).join("")
     : `<section class="section"><p class="empty">Nothing logged for this ${S.logSpan}. Tell Mumbo what you worked on and tap Proceed.</p></section>`}`;
 }
@@ -814,7 +845,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
+  const el = e.target.closest("[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
   if (!el) return;
   if (el.id === "copyReport") {
     const text = reportText(), msg = $("#copyMsg");
@@ -822,7 +853,8 @@ document.addEventListener("click", e => {
       () => { msg.textContent = "Couldn't copy automatically. Select the text below."; $("#view").insertAdjacentHTML("beforeend", `<textarea class="mselect" style="width:100%;min-height:200px;max-width:none">${esc(text)}</textarea>`); });
     return;
   }
-  if (el.dataset.span) { S.logSpan = el.dataset.span; store.set("vd-logspan", S.logSpan); }
+  if (el.dataset.logday) { S.cursor = parse(el.dataset.logday); S.logSpan = "day"; store.set("vd-logspan", "day"); }
+  else if (el.dataset.span) { S.logSpan = el.dataset.span; store.set("vd-logspan", S.logSpan); }
   else if (el.dataset.sf) { S.statuses.has(el.dataset.sf) ? S.statuses.delete(el.dataset.sf) : S.statuses.add(el.dataset.sf); saveStatuses(); }
   else if (el.dataset.sfp) { S.statuses = new Set(el.dataset.sfp === "all" ? STATUS.map(([s]) => s) : ACTIVE_S); saveStatuses(); }
   else if (el.dataset.level) { S.mapLevel = el.dataset.level; store.set("vd-maplevel", S.mapLevel); }
@@ -850,7 +882,7 @@ document.addEventListener("change", async e => {
 $("#q").addEventListener("input", e => { S.q = e.target.value.trim().toLowerCase(); render(); });
 function shift(n) {
   const c = S.cursor;
-  S.cursor = S.view === "today" || (S.view === "worklog" && S.logSpan === "day") ? addDays(c, n) : S.view === "week" ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
+  S.cursor = S.view === "today" || (S.view === "worklog" && S.logSpan === "day") ? addDays(c, n) : S.view === "week" || (S.view === "worklog" && S.logSpan === "week") ? addDays(c, 7 * n) : new Date(c.getFullYear(), c.getMonth() + n, 1);
   render();
 }
 $("#prev").onclick = () => shift(-1);

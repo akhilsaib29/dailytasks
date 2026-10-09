@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -84,7 +85,7 @@ def ask_llm(prompt):
 
 
 # ---------- drafting ----------
-PROMPT = """You turn a person's spoken or typed work update into a work log against their task list.
+PROMPT = """You turn a person's spoken or typed work update into work log entries, and keep their task list tidy.
 The notes can be in any language or a mix (Hindi, Hinglish, Marathi, Tamil, English, ...).
 Today is {today} ({weekday}), India time. Weeks start Monday.
 
@@ -94,12 +95,15 @@ Existing tasks (number | task list | status | title):
 Task lists: {lists}
 
 Rules:
-- Make one item per piece of work mentioned. Split compound sentences.
-- If an item is the same work as an existing task, set "match" to that task's number. Otherwise "match": null and write a new task: title (starts with a verb, under 80 chars), description (2-3 sentences of useful context from the notes, never invent facts), tasklist (exactly one of the task lists).
-- note: one sentence in past tense of what the person did or said about it, for their daily work log.
-- status after this update: "done" if finished, "in_progress" if worked on and not finished, "in_review" if waiting on review/approval, "on_hold" if paused/blocked, "open" for new work not started.
+- One item per thing they did or said. Split compound sentences.
+- note: the work log entry. Just what they said, first person, cleaned up but close to their own words. Do not embellish.
+- A work log entry is NOT a task. Link each item to a task only like this:
+  * If it is about an existing task (including meetings, calls or discussions about that work), set "match" to that task's number. Prefer matching: a refinement, follow-up or next step of an existing task is that task, not a new one.
+  * Only if it is a real piece of ongoing work or a deliverable that no existing task covers, set "match": null and "new_task": title (starts with a verb, under 80 chars, names the deliverable, not the meeting), description (2-3 sentences of context from the notes, never invent facts), tasklist (exactly one of the task lists), priority. If several items are about the same new work, give them the exact same new_task title.
+  * One-off meetings, calls or chores with no lasting deliverable: "match": null, "new_task": null (log only).
+- status: the task's status after this update, only for linked items: "done" if finished, "in_progress" if worked on and not finished, "in_review" if waiting on review/approval, "on_hold" if paused/blocked, "open" if not started.
 - due: YYYY-MM-DD only if a deadline is stated (resolve "Friday", "next week" = next Monday), else null.
-- priority: "high" if urgent, "low" if it can wait, else "med".
+- new_task priority: "high" if urgent, "low" if it can wait, else "med".
 - date: the day the work happened, YYYY-MM-DD (today unless they say yesterday or another day).
 - Write titles, descriptions, notes and the summary in {language}.
 - The notes come from speech-to-text, which mishears names. Always spell these exactly: {vocab}.
@@ -109,7 +113,9 @@ EXCEPTION: if the message is not a work update but asks to change the DATE of th
 reply only {{"action": "redate", "date": "YYYY-MM-DD"}} with the new date resolved.
 
 Otherwise reply with only a JSON object:
-{{"summary": "one sentence", "date": "YYYY-MM-DD", "items": [{{"match": 12, "title": "", "description": "", "tasklist": "", "status": "", "priority": "med", "due": null, "note": ""}}]}}
+{{"summary": "one sentence", "date": "YYYY-MM-DD", "items": [{{"note": "", "match": 12, "new_task": null, "status": "in_progress", "due": null}},
+  {{"note": "", "match": null, "new_task": {{"title": "", "description": "", "tasklist": "", "priority": "med"}}, "status": "open", "due": null}},
+  {{"note": "", "match": null, "new_task": null, "status": null, "due": null}}]}}
 
 Notes:
 \"\"\"
@@ -148,43 +154,56 @@ def valid_date(s, fallback):
 
 
 def clean_draft(d, cands, lists, fallback_date):
-    """Normalize whatever the LLM returned into a safe draft: matches must be real tasks, lists must exist."""
+    """Normalize the LLM's draft. Each item is a work log entry linked to an existing task, a new task, or nothing."""
     default_list = next((l for l in lists if l.lower().startswith("general")), lists[0] if lists else "")
+    by_title = {c["title"].strip().lower(): c for c in cands}
     items = []
     for it in d.get("items") or []:
         if not isinstance(it, dict):
             continue
-        m = it.get("match")
+        note = str(it.get("note") or "").strip()[:500]
+        m, nt = it.get("match"), it.get("new_task") if isinstance(it.get("new_task"), dict) else None
         c = cands[m - 1] if isinstance(m, int) and 1 <= m <= len(cands) else None
-        if not c and not str(it.get("title") or "").strip():
-            continue
+        title = str((nt or {}).get("title") or "").strip()[:200]
+        c = c or by_title.get(title.lower())  # a "new" task that already exists is that task
         status = it.get("status") if it.get("status") in LABEL else ("in_progress" if c else "open")
-        item = {"status": status, "note": str(it.get("note") or "").strip()[:500],
-                "due": valid_date(it.get("due"), None),
-                "priority": it.get("priority") if it.get("priority") in PRIORITIES else "med"}
+        item = {"note": note, "status": status, "due": valid_date(it.get("due") or (nt or {}).get("due"), None)}
         if c:
-            item.update(task_id=c["id"], title=c["title"], tasklist=c["project"], was=c["status"])
+            item.update(kind="existing", task_id=c["id"], title=c["title"], tasklist=c["project"], was=c["status"])
+        elif title:
+            tl = str(nt.get("tasklist") or "").strip()
+            item.update(kind="new", task_id=None, title=title, description=str(nt.get("description") or "").strip()[:2000],
+                        tasklist=tl if tl in lists else default_list,
+                        priority=nt.get("priority") if nt.get("priority") in PRIORITIES else "med")
+        elif note:
+            item.update(kind="log", task_id=None, title=note[:200], note="", status=None, due=None)
         else:
-            tl = str(it.get("tasklist") or "").strip()
-            item.update(task_id=None, title=str(it["title"]).strip()[:200],
-                        description=str(it.get("description") or "").strip()[:2000],
-                        tasklist=tl if tl in lists else default_list)
+            continue
         items.append(item)
     return {"summary": str(d.get("summary") or "").strip()[:300], "date": valid_date(d.get("date"), fallback_date),
             "items": items}
 
 
+def kind(it):
+    return it.get("kind") or ("existing" if existing(it) else "new")  # drafts saved before kinds existed
+
+
 def format_draft(d):
     day = datetime.strptime(d["date"], "%Y-%m-%d").strftime("%a %d %b")
-    out = [f"📅 <b>{day}</b>: {escape(d['summary'])}", ""]
+    out, made = [f"📅 <b>{day}</b>: {escape(d['summary'])}", ""], set()
     for it in d["items"]:
         due = f" · due {datetime.strptime(it['due'], '%Y-%m-%d').strftime('%d %b')}" if it.get("due") else ""
-        if existing(it):
+        k = kind(it)
+        if k == "log":
+            out.append(f"📝 {escape(it['title'])}\n     log only")
+        elif k == "existing":
             change = f"{LABEL[it['was']]} → <b>{LABEL[it['status']]}</b>" if it["status"] != it["was"] else LABEL[it["status"]]
-            out.append(f"{MARK[it['status']]} <b>{escape(it['title'])}</b>\n     existing · {escape(it['tasklist'])} · {change}{due}")
+            out.append(f"{MARK[it['status']]} <b>{escape(it['title'])}</b>\n     task · {escape(it['tasklist'])} · {change}{due}")
         else:
-            out.append(f"➕ <b>{escape(it['title'])}</b>\n     NEW in {escape(it['tasklist'])} · {LABEL[it['status']]}{due}")
-            if it.get("description"):
+            first = it["title"].lower() not in made
+            made.add(it["title"].lower())
+            out.append(f"➕ <b>{escape(it['title'])}</b>\n     {'NEW task' if first else 'same new task'} in {escape(it['tasklist'])} · {LABEL[it['status']]}{due}")
+            if first and it.get("description"):
                 out.append(f"     <i>{escape(it['description'])}</i>")
         if it["note"]:
             out.append(f"     📝 {escape(it['note'])}")
@@ -203,24 +222,30 @@ def existing(it):
 
 
 def apply_item(it):
-    """Write one draft item to the tasks table. Returns the task id."""
+    """Write one draft item's task change. Returns the task id, or None for a log-only entry."""
+    k = kind(it)
+    if k == "log":
+        return None
     closed = it["status"] in ("done", "cancelled")
-    if existing(it):
+    if k == "existing":
         key = f"id=eq.{it['task_id']}" if it.get("task_id") else f"zoho_id=eq.{it['zoho_id']}"
         row = sb("GET", f"tasks?{key}&select=id,done")
+    else:  # same title already a task (earlier item in this draft, or an older one): update it, never duplicate
+        row = sb("GET", f"tasks?title=ilike.{quote(it['title'].replace('*', ''))}&select=id,done&limit=1")
         if not row:
-            raise RuntimeError("task no longer exists")
-        patch = {"status": it["status"], "done": closed}
-        if row[0]["done"] != closed:
-            patch["completed_at"] = today().isoformat() if closed else None
-        if it.get("due"):
-            patch["date"] = it["due"]
-        sb("PATCH", f"tasks?id=eq.{row[0]['id']}", patch, prefer="return=minimal")
-        return row[0]["id"]
-    sb("POST", "projects?on_conflict=name", {"name": it["tasklist"]}, prefer="resolution=ignore-duplicates,return=minimal")
-    return sb("POST", "tasks", {"title": it["title"], "description": it.get("description", ""), "project": it["tasklist"],
-                                "status": it["status"], "done": closed, "priority": it["priority"], "date": it.get("due"),
-                                "completed_at": today().isoformat() if closed else None})[0]["id"]
+            sb("POST", "projects?on_conflict=name", {"name": it["tasklist"]}, prefer="resolution=ignore-duplicates,return=minimal")
+            return sb("POST", "tasks", {"title": it["title"], "description": it.get("description", ""), "project": it["tasklist"],
+                                        "status": it["status"], "done": closed, "priority": it.get("priority", "med"),
+                                        "date": it.get("due"), "completed_at": today().isoformat() if closed else None})[0]["id"]
+    if not row:
+        raise RuntimeError("task no longer exists")
+    patch = {"status": it["status"], "done": closed}
+    if row[0]["done"] != closed:
+        patch["completed_at"] = today().isoformat() if closed else None
+    if it.get("due"):
+        patch["date"] = it["due"]
+    sb("PATCH", f"tasks?id=eq.{row[0]['id']}", patch, prefer="return=minimal")
+    return row[0]["id"]
 
 
 def report(arg):
@@ -247,7 +272,7 @@ def report(arg):
         if r["date"] != day:
             day = r["date"]
             out.append(f"\n<b>{datetime.strptime(day, '%Y-%m-%d'):%a %d %b}</b>")
-        out.append(f"• {escape(r['title'])} — {LABEL.get(r['status'], r['status'])}"
+        out.append(f"• {escape(r['title'])}" + (f" — {LABEL.get(r['status'], r['status'])}" if r["status"] else "")
                    + (f"\n   {escape(r['note'])}" if r["note"] else ""))
     return "\n".join(out)
 
@@ -353,7 +378,8 @@ def proceed(chat, draft_id, d):
         except Exception as e:
             failed.append((it, str(e)))
         sb("PATCH", f"drafts?id=eq.{draft_id}", {"draft": d}, prefer="return=minimal")  # progress survives a crash
-    lines = [f"{'➕' if not existing(it) else MARK[it['status']]} {escape(it['title'])}" for it in done]
+    icon = lambda it: {"log": "📝", "new": "➕"}.get(kind(it)) or MARK[it["status"]]
+    lines = [f"{icon(it)} {escape(it['title'])}" for it in done]
     if failed:
         sb("PATCH", f"drafts?id=eq.{draft_id}", {"status": "pending"}, prefer="return=minimal")
         lines += ["", "⚠️ <b>Not saved yet</b> (tap Proceed to retry only these):"]
@@ -485,15 +511,18 @@ if __name__ == "__main__":
     cands = [{"id": 7, "title": "EDR setup – Shreya", "project": "MSOC", "status": "open"}]
     d = clean_draft({"summary": "x", "date": "2026-10-07", "items": [
         {"match": 1, "status": "done", "note": "Finished EDR", "due": "nope"},
-        {"match": None, "title": "Fix CRM blueprint", "tasklist": "Made Up", "status": "weird"},
-        {"match": 9, "title": ""}, "junk"]}, cands, lists, "2026-10-07")
-    assert len(d["items"]) == 2
-    a, b = d["items"]
-    assert (a["task_id"], a["title"], a["was"], a["status"], a["due"]) == (7, "EDR setup – Shreya", "open", "done", None)
-    assert (b["task_id"], b["tasklist"], b["status"]) == (None, "General ++", "open")
-    assert existing({"zoho_id": "z1"}) and not existing(b)
+        {"match": None, "new_task": {"title": "Fix CRM blueprint", "tasklist": "Made Up"}, "status": "weird", "note": "Started it"},
+        {"match": None, "new_task": {"title": "edr setup – shreya"}, "status": "in_progress", "note": "More EDR"},
+        {"match": None, "new_task": None, "note": "Met Suyash on deal flow"},
+        {"match": 9, "note": ""}, "junk"]}, cands, lists, "2026-10-07")
+    a, b, c, e = d["items"]
+    assert (a["kind"], a["task_id"], a["was"], a["status"], a["due"]) == ("existing", 7, "open", "done", None)
+    assert (b["kind"], b["tasklist"], b["status"], b["priority"]) == ("new", "General ++", "open", "med")
+    assert (c["kind"], c["task_id"]) == ("existing", 7)  # a "new" task that already exists is not duplicated
+    assert (e["kind"], e["title"], e["note"], e["status"]) == ("log", "Met Suyash on deal flow", "", None)
+    assert kind({"zoho_id": "z1"}) == "existing" and kind({"title": "x"}) == "new"
     text = format_draft(d)
-    assert "Open → <b>Done</b>" in text and "NEW in General ++" in text
+    assert "Open → <b>Done</b>" in text and "NEW task in General ++" in text and "log only" in text
     assert valid_date("2026-13-40", "f") == "f"
     assert '"action": "redate"' in build_prompt("x", cands, lists)
     assert "Zoho (never Jovo" in build_prompt("x", cands, lists)
