@@ -1,14 +1,13 @@
 -- Run once in Supabase → SQL Editor (fresh database).
--- Zoho Projects is the source of truth for tasks; these tables mirror it and hold the work log.
 
-create table projects (            -- one row per Zoho task list
+create table projects (            -- one row per task list
   name        text primary key,
   area        text not null default 'General',
   description text default '',
   created_at  timestamptz default now()
 );
 
-create table tasks (               -- mirror of Zoho tasks, refreshed by sync
+create table tasks (               
   id           bigint generated always as identity primary key,
   zoho_id      text unique,
   title        text not null,
@@ -43,7 +42,7 @@ create table worklog (             -- what you worked on, per day (the ED report
   created_at  timestamptz default now()
 );
 
-create table kv (                  -- Zoho token cache, last sync time, Zoho ids
+create table kv (                  -- unused since Zoho was dropped
   key        text primary key,
   value      jsonb,
   updated_at timestamptz default now()
@@ -66,4 +65,3 @@ alter table kv       enable row level security;
 -- create table if not exists kv (key text primary key, value jsonb, updated_at timestamptz default now());
 -- alter table worklog enable row level security;
 -- alter table kv enable row level security;
--- delete from tasks; delete from projects;   -- the first sync refills both from Zoho

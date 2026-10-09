@@ -284,7 +284,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
       <div class="spacer"></div>
       <label class="search"><span data-icon="search"></span><input id="q" type="search" placeholder="Search tasks" aria-label="Search tasks"></label>
       <button class="btn" id="exportBtn" title="Download what this view shows as a spreadsheet (CSV)"><span data-icon="download"></span>Export</button>
-      <button class="btn icon" id="syncBtn" title="Sync with Zoho Projects" aria-label="Sync with Zoho Projects"><span data-icon="sync"></span></button>
+      <button class="btn icon" id="syncBtn" title="Refresh" aria-label="Refresh"><span data-icon="sync"></span></button>
       <div id="dateNav" style="display:flex;gap:6px;align-items:center">
         <button class="btn icon" id="prev" aria-label="Previous"><span data-icon="left"></span></button>
         <span class="range" id="range"></span>
@@ -293,7 +293,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
       </div>
     </header>
     <main class="content">
-      <div class="banner" id="banner" hidden>Preview from your Zoho export. Changes stay in this tab until the backend is connected.</div>
+      <div class="banner" id="banner" hidden>Preview data. Changes stay in this tab until the backend is connected.</div>
       <div id="view" style="display:grid;gap:20px"></div>
     </main>
   </div>
@@ -706,7 +706,7 @@ function worklogView() {
     <button class="btn primary" id="copyReport">${icon("copy")}Copy report for ED</button><span class="sub" id="copyMsg" role="status"></span></div>
   ${days.length ? days.map(d => `<section class="section"><header><h2>${fmt(parse(d), { weekday: "long", day: "numeric", month: "long" })}</h2><span class="n">${byDay[d].length}</span></header>
     <ul class="list">${byDay[d].map(r => {
-      const t = S.tasks.find(x => x.zoho_id && x.zoho_id === r.zoho_id);
+      const t = S.tasks.find(x => x.title === r.title);
       return `<li class="row"><span class="st" data-s="${esc(r.status)}" style="cursor:default">${LABEL[r.status] || esc(r.status)}</span>
         ${t ? `<button class="t" data-open="${t.id}">` : `<div class="t">`}<div class="title">${esc(r.title)}</div>${r.note ? `<div class="desc" style="white-space:normal">${esc(r.note)}</div>` : ""}${t ? "</button>" : "</div>"}
         ${projChip(r.tasklist || "")}<span></span><span></span></li>`;
@@ -734,8 +734,7 @@ $("#exportBtn").onclick = () => {
 };
 $("#syncBtn").onclick = async e => {
   const b = e.currentTarget; b.disabled = true;
-  try { if (!S.preview) await api("sync", { method: "POST" }); await load(); }
-  catch (err) { S.sync_error = String(err.message).slice(0, 200); render(); }
+  try { await load(); }
   finally { b.disabled = false; }
 };
 
@@ -758,9 +757,7 @@ function render() {
 
   const c = S.cursor, s = weekStart(c);
   $("#viewTitle").textContent = { today: iso(c) === today() ? "Today" : "Day", backlog: "Backlog", board: "Board", week: "Week", month: "Month", projects: "Projects", tree: "Tree", map: "Map", analytics: "Analytics", worklog: "Work Log" }[S.view];
-  const ago = S.last_sync ? Math.round((Date.now() / 1000 - S.last_sync) / 60) : null;
-  $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" })
-    + (S.sync_error ? " · Zoho sync failed: " + S.sync_error : ago === null ? "" : ` · Zoho synced ${ago < 1 ? "just now" : ago + " min ago"}`);
+  $("#viewSub").textContent = fmt(new Date(), { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   $("#dateNav").style.display = ["today", "week", "month", "worklog"].includes(S.view) ? "flex" : "none";
   const [ls, le] = logRange();
   $("#range").textContent = S.view === "worklog" ? (ls === le ? fmt(parse(ls), { weekday: "short", day: "numeric", month: "short" }) : `${short(ls)} – ${short(le)}`)
@@ -789,12 +786,12 @@ function openDrawer(id) {
         <div class="field"><label for="f-status">Status</label><select id="f-status" name="status">${STATUS.map(([v, l]) => `<option value="${v}"${v === t.status ? " selected" : ""}>${l}</option>`).join("")}</select></div>
         <div class="field"><label for="f-priority">Priority</label><select id="f-priority" name="priority">${[["high", "High"], ["med", "Medium"], ["low", "Low"]].map(([v, l]) => `<option value="${v}"${v === t.priority ? " selected" : ""}>${l}</option>`).join("")}</select></div>
         <div class="field"><label for="f-date">Due date</label><input id="f-date" name="date" type="date" value="${t.date || ""}"></div>
-        <div class="field"><label for="f-project">Project</label><select id="f-project" name="project"${t.zoho_id ? ' disabled title="Move tasks between lists in Zoho"' : ""}>${Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}">${areas[a].sort().map(n => `<option${n === t.project ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
+        <div class="field"><label for="f-project">Project</label><select id="f-project" name="project">${Object.keys(areas).sort().map(a => `<optgroup label="${esc(a)}">${areas[a].sort().map(n => `<option${n === t.project ? " selected" : ""}>${esc(n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
       </div>
       <div class="field"><label for="f-desc">Description</label><textarea id="f-desc" name="description">${esc(t.description)}</textarea></div>
       <span class="err" id="dErr"></span>
     </form>
-    <footer><button class="btn danger" id="dDel" type="button">${t.zoho_id ? "Delete in Zoho" : "Delete"}</button><div class="spacer"></div>
+    <footer><button class="btn danger" id="dDel" type="button">Delete</button><div class="spacer"></div>
       <button class="btn" data-close type="button">Cancel</button><button class="btn primary" form="dForm">Save</button></footer>
   </aside>`;
   S.editing = id;
