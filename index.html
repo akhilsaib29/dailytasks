@@ -508,9 +508,11 @@ function boardView() {
 function tasksByDay() {
   const idx = {}, byTitle = new Map(), all = visible();
   const add = (k, t, worked) => { const m = idx[k] ||= new Map(); if (worked || !m.has(t.id)) m.set(t.id, worked); };
+  const logged = new Set(S.worklog.map(r => r.title));
   for (const t of all) {
     byTitle.set(t.title, t);
-    const k = t.date || (t.created_at ? iso(new Date(t.created_at)) : null);
+    // created date only for tasks with no due date and no work log; otherwise a task sent today about Monday shows twice
+    const k = t.date || (!logged.has(t.title) && t.created_at ? iso(new Date(t.created_at)) : null);
     if (k) add(k, t, false);
   }
   for (const r of S.worklog) if (byTitle.has(r.title)) add(r.date, byTitle.get(r.title), true);
