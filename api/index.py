@@ -363,6 +363,12 @@ def apply_redate(chat, d):
     send(chat, f"✅ Moved to {datetime.strptime(new, '%Y-%m-%d'):%a %d %b}.")
 
 
+def log_exists(date, title, note, skip_id=None):
+    """Same day + same task + same note is a duplicate work log entry."""
+    rows = sb("GET", f"worklog?date=eq.{date}&title=ilike.{quote(title.replace('*', ''))}&select=id,note")
+    return any(r["id"] != skip_id and (r["note"] or "").strip().lower() == (note or "").strip().lower() for r in rows)
+
+
 def proceed(chat, draft_id, d):
     done, failed = [], []
     for it in d["items"]:
@@ -370,9 +376,10 @@ def proceed(chat, draft_id, d):
             continue
         try:
             tid = apply_item(it)
-            sb("POST", "worklog", {"date": d["date"], "title": it["title"], "tasklist": it["tasklist"],
-                                   "note": it["note"], "status": it["status"], "draft_id": draft_id},
-               prefer="return=minimal")
+            if not log_exists(d["date"], it["title"], it["note"]):
+                sb("POST", "worklog", {"date": d["date"], "title": it["title"], "tasklist": it["tasklist"],
+                                       "note": it["note"], "status": it["status"], "draft_id": draft_id},
+                   prefer="return=minimal")
             it["applied"] = tid
             done.append(it)
         except Exception as e:
@@ -419,6 +426,10 @@ def telegram(update: dict, x_telegram_bot_api_secret_token: str = Header("")):
     if not E("TELEGRAM_SECRET") or x_telegram_bot_api_secret_token != E("TELEGRAM_SECRET"):
         raise HTTPException(403)
     msg = update.get("message") or (update.get("callback_query") or {}).get("message") or {}
+    # Telegram resends an update when the first try is slow (voice + LLM). Handle each update_id once.
+    if update.get("update_id") and not sb("POST", "kv?on_conflict=key", {"key": f"u:{update['update_id']}"},
+                                          prefer="resolution=ignore-duplicates,return=representation"):
+        return {"ok": True}
     try:
         if "callback_query" in update:
             handle_callback(update["callback_query"])
@@ -457,6 +468,12 @@ def update_task(tid: int, body: dict, x_key: str = Header("")):
         patch["date"] = valid_date(patch["date"], None)
     if not patch:
         return {"ok": True}
+    if "title" in patch:
+        patch["title"] = patch["title"].strip()
+        if not patch["title"]:
+            raise HTTPException(400, "Title can't be empty")
+        if sb("GET", f"tasks?title=ilike.{quote(patch['title'].replace('*', ''))}&id=neq.{tid}&select=id"):
+            raise HTTPException(409, "Another task already has this title")
     row = sb("GET", f"tasks?id=eq.{tid}&select=title,done")[0]
     if patch.get("title") and patch["title"] != row["title"]:  # work log links to tasks by title
         sb("PATCH", f"worklog?title=eq.{quote(row['title'])}", {"title": patch["title"]}, prefer="return=minimal")
@@ -472,6 +489,35 @@ def update_task(tid: int, body: dict, x_key: str = Header("")):
 def delete_task(tid: int, x_key: str = Header("")):
     check(x_key)
     sb("DELETE", f"tasks?id=eq.{tid}", prefer="return=minimal")
+    return {"ok": True}
+
+
+@app.patch("/api/worklog/{wid}")
+def update_log(wid: int, body: dict, x_key: str = Header("")):
+    check(x_key)
+    patch = {k: body[k] for k in ("date", "title", "tasklist", "note", "status") if k in body}
+    if "date" in patch and not valid_date(patch["date"], None):
+        raise HTTPException(400, "Bad date")
+    if "status" in patch and patch["status"] not in LABEL:
+        patch["status"] = None
+    if "title" in patch:
+        patch["title"] = str(patch["title"]).strip()
+        if not patch["title"]:
+            raise HTTPException(400, "Title can't be empty")
+    row = sb("GET", f"worklog?id=eq.{wid}")
+    if not row:
+        raise HTTPException(404)
+    new = {**row[0], **patch}
+    if log_exists(new["date"], new["title"], new["note"], skip_id=wid):
+        raise HTTPException(409, "Same entry is already logged on that day")
+    sb("PATCH", f"worklog?id=eq.{wid}", patch, prefer="return=minimal")
+    return {"ok": True}
+
+
+@app.delete("/api/worklog/{wid}")
+def delete_log(wid: int, x_key: str = Header("")):
+    check(x_key)
+    sb("DELETE", f"worklog?id=eq.{wid}", prefer="return=minimal")
     return {"ok": True}
 
 

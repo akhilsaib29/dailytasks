@@ -422,6 +422,22 @@ async function remove(id) {
   S.tasks = S.tasks.filter(x => x.id !== id);
   render();
 }
+async function saveLog(id, patch) {
+  if (!S.preview) await api("worklog/" + id, { method: "PATCH", body: JSON.stringify(patch) });
+  Object.assign(S.worklog.find(x => x.id === id), patch);
+  render();
+}
+async function removeLog(id) {
+  if (!S.preview) await api("worklog/" + id, { method: "DELETE" });
+  S.worklog = S.worklog.filter(x => x.id !== id);
+  render();
+}
+// Duplicate check: tasks with the same title, work log entries with the same day + task + note.
+const norm = s => String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+const dupTaskIds = () => { const seen = {}; for (const t of S.tasks) (seen[norm(t.title)] ||= []).push(t.id); return new Set(Object.values(seen).filter(a => a.length > 1).flat()); };
+const dupLogIds = () => { const seen = {}; for (const r of S.worklog) (seen[r.date + "|" + norm(r.title) + "|" + norm(r.note)] ||= []).push(r.id); return new Set(Object.values(seen).filter(a => a.length > 1).flat()); };
+const dupChip = `<span class="st" style="--c:var(--danger);cursor:default" title="Looks like a duplicate">Duplicate?</span>`;
+const errText = err => (String(err.message).match(/"detail":"([^"]+)"/)?.[1] || err.message).slice(0, 200);
 
 /* ---------- pieces ---------- */
 const statusSelect = t => `<select class="st" data-s="${t.status}" data-id="${t.id}" aria-label="Status">${STATUS.map(([v, l]) => `<option value="${v}"${v === t.status ? " selected" : ""}>${l}</option>`).join("")}</select>`;
@@ -431,7 +447,7 @@ const dueLabel = t => !t.date ? `<span class="due">—</span>` : `<span class="d
 
 const row = t => `<li class="row${closed(t) ? " closed" : ""}">${statusSelect(t)}
   <button class="t" data-open="${t.id}"><div class="title">${esc(t.title)}</div>${t.description ? `<div class="desc">${esc(t.description)}</div>` : ""}</button>
-  ${projChip(t.project)}${priBars(t.priority)}${dueLabel(t)}</li>`;
+  ${projChip(t.project)}${S.dupTasks?.has(t.id) ? dupChip : priBars(t.priority)}${dueLabel(t)}</li>`;
 
 const card = (t, opts = {}) => `<div class="card${closed(t) ? " closed" : ""}${opts.worked ? " logged" : ""}">
   <button class="t" data-open="${t.id}">${esc(t.title)}</button>
@@ -516,7 +532,7 @@ function taskDayView() {
   const k = iso(S.cursor), list = tasksByDay()(k), titles = new Set(list.map(([t]) => t.title));
   const logs = S.worklog.filter(r => r.date === k).sort((a, b) => a.id - b.id);
   const other = logs.filter(r => !titles.has(r.title) && (!S.filter || r.tasklist === S.filter || (r.tasklist && areaOf(r.tasklist) === S.filter)));
-  const sub = r => `<li><span class="tl-dot"></span><span>${esc(r.note || r.title)}</span>${logStatus(r)}</li>`;
+  const sub = r => `<li data-log="${r.id}" style="cursor:pointer" title="Edit this entry"><span class="tl-dot"></span><span>${esc(r.note || r.title)}</span>${S.dupLogs.has(r.id) ? dupChip : ""}${logStatus(r)}</li>`;
   return `<section class="section"><header><h2>Tasks</h2><span class="n">${list.length}</span></header>
     ${list.length ? `<ul class="list">${list.map(([t]) => {
       const mine = logs.filter(r => r.title === t.title);
@@ -750,11 +766,8 @@ function reportText() {
 }
 
 const logStatus = r => r.status ? `<span class="st" data-s="${esc(r.status)}" style="cursor:default">${LABEL[r.status] || esc(r.status)}</span>` : "";
-const logCard = r => {
-  const t = S.tasks.find(x => x.title === r.title);
-  return `<div class="card logged">${t ? `<button class="t" data-open="${t.id}">` : `<div class="t">`}${esc(r.title)}${t ? "</button>" : "</div>"}
-  ${r.tasklist || r.status ? `<div class="meta">${r.tasklist ? projChip(r.tasklist) : "<span></span>"}${logStatus(r)}</div>` : ""}</div>`;
-};
+const logCard = r => `<div class="card logged"><button class="t" data-log="${r.id}">${esc(r.title)}</button>
+  ${r.tasklist || r.status ? `<div class="meta">${r.tasklist ? projChip(r.tasklist) : "<span></span>"}${S.dupLogs.has(r.id) ? dupChip : logStatus(r)}</div>` : ""}</div>`;
 
 function logCalendar(rows) {
   const byDay = {};
@@ -784,12 +797,9 @@ function worklogView() {
       ${[["day", "Day"], ["week", "Week"], ["month", "Month"]].map(([v, l]) => `<button data-span="${v}" aria-pressed="${S.logSpan === v}">${l}</button>`).join("")}</div>
     ${scopeSelect()}<button class="btn primary" id="copyReport">${icon("copy")}Copy report for ED</button><span class="sub" id="copyMsg" role="status"></span></div>
   ${S.logSpan !== "day" ? logCalendar(rows) : days.length ? days.map(d => `<section class="section"><header><h2>${fmt(parse(d), { weekday: "long", day: "numeric", month: "long" })}</h2><span class="n">${byDay[d].length}</span></header>
-    <ul class="list">${byDay[d].map(r => {
-      const t = S.tasks.find(x => x.title === r.title);
-      return `<li class="row">${logStatus(r) || "<span></span>"}
-        ${t ? `<button class="t" data-open="${t.id}">` : `<div class="t">`}<div class="title">${esc(r.title)}</div>${r.note ? `<div class="desc" style="white-space:normal">${esc(r.note)}</div>` : ""}${t ? "</button>" : "</div>"}
-        ${r.tasklist ? projChip(r.tasklist) : "<span></span>"}<span></span><span></span></li>`;
-    }).join("")}</ul></section>`).join("")
+    <ul class="list">${byDay[d].map(r => `<li class="row">${logStatus(r) || "<span></span>"}
+        <button class="t" data-log="${r.id}" title="Edit or delete"><div class="title">${esc(r.title)}</div>${r.note ? `<div class="desc" style="white-space:normal">${esc(r.note)}</div>` : ""}</button>
+        ${r.tasklist ? projChip(r.tasklist) : "<span></span>"}${S.dupLogs.has(r.id) ? dupChip : "<span></span>"}<span></span></li>`).join("")}</ul></section>`).join("")
     : `<section class="section"><p class="empty">Nothing logged for this ${S.logSpan}. Tell Mumbo what you worked on and tap Proceed.</p></section>`}`;
 }
 
@@ -819,6 +829,7 @@ $("#syncBtn").onclick = async e => {
 
 /* ---------- shell ---------- */
 function render() {
+  S.dupTasks = dupTaskIds(); S.dupLogs = dupLogIds();
   const open = S.tasks.filter(t => !closed(t)), counts = {
     today: open.filter(t => t.date && t.date <= today()).length, backlog: open.filter(t => !t.date).length,
     board: open.length, tasks: open.length, projects: S.projects.length };
@@ -862,6 +873,7 @@ function openDrawer(id) {
   <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle">
     <header><h2 id="dTitle">Edit task</h2><button class="btn icon" data-close aria-label="Close">${icon("x")}</button></header>
     <form id="dForm">
+      ${S.dupTasks.has(id) ? `<p class="err" style="margin:0">Another task has the same title. Delete one of them.</p>` : ""}
       <div class="field title"><label for="f-title">Title</label><input id="f-title" name="title" value="${esc(t.title)}" required></div>
       <div class="grid2">
         <div class="field"><label for="f-status">Status</label><select id="f-status" name="status">${STATUS.map(([v, l]) => `<option value="${v}"${v === t.status ? " selected" : ""}>${l}</option>`).join("")}</select></div>
@@ -872,7 +884,7 @@ function openDrawer(id) {
       <div class="field"><label for="f-desc">Description</label><textarea id="f-desc" name="description">${esc(t.description)}</textarea></div>
       <div class="field"><label>Work log</label>${(() => {
         const logs = S.worklog.filter(r => r.title === t.title).sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-        return logs.length ? `<ul class="tlog">${logs.map(r => `<li><b>${short(r.date)}</b><span>${esc(r.note || "Worked on it")}${r.status ? ` · ${LABEL[r.status] || esc(r.status)}` : ""}</span></li>`).join("")}</ul>`
+        return logs.length ? `<ul class="tlog">${logs.map(r => `<li data-log="${r.id}" style="cursor:pointer" title="Edit this entry"><b>${short(r.date)}</b><span>${esc(r.note || "Worked on it")}${r.status ? ` · ${LABEL[r.status] || esc(r.status)}` : ""}</span></li>`).join("")}</ul>`
           : `<p class="empty" style="margin:0">No work logged on this task yet.</p>`;
       })()}</div>
       <span class="err" id="dErr"></span>
@@ -888,11 +900,50 @@ function openDrawer(id) {
     for (const k of ["title", "status", "priority", "project", "description"]) if (f[k] !== (t[k] ?? "")) patch[k] = f[k];
     if ((f.date || null) !== (t.date || null)) patch.date = f.date || null;
     try { if (Object.keys(patch).length) await save(id, patch); closeDrawer(); }
-    catch (err) { $("#dErr").textContent = "Couldn't save: " + (String(err.message).match(/"detail":"([^"]+)"/)?.[1] || err.message).slice(0, 200); }
+    catch (err) { $("#dErr").textContent = "Couldn't save: " + errText(err); }
   };
   $("#dDel").onclick = async e => {
     if (!e.target.classList.contains("armed")) { e.target.classList.add("armed"); e.target.textContent = "Confirm delete"; return; }
     try { await remove(id); closeDrawer(); } catch { $("#dErr").textContent = "Couldn't delete. Try again."; }
+  };
+}
+
+function openLogDrawer(id) {
+  const r = S.worklog.find(x => x.id === id); if (!r) return;
+  const t = S.tasks.find(x => x.title === r.title);
+  $("#drawerRoot").innerHTML = `<div class="scrim" data-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <header><h2 id="dTitle">Edit work log entry</h2><button class="btn icon" data-close aria-label="Close">${icon("x")}</button></header>
+    <form id="lForm">
+      ${S.dupLogs.has(id) ? `<p class="err" style="margin:0">Another entry has the same day, task and note. Delete one of them.</p>` : ""}
+      <div class="field title"><label for="l-title">Task</label><input id="l-title" name="title" value="${esc(r.title)}" list="l-titles" required>
+        <datalist id="l-titles">${S.tasks.map(x => `<option value="${esc(x.title)}">`).join("")}</datalist></div>
+      <div class="grid2">
+        <div class="field"><label for="l-date">Date worked</label><input id="l-date" name="date" type="date" value="${r.date}" required></div>
+        <div class="field"><label for="l-status">Status</label><select id="l-status" name="status"><option value="">None</option>${STATUS.map(([v, l]) => `<option value="${v}"${v === r.status ? " selected" : ""}>${l}</option>`).join("")}</select></div>
+      </div>
+      <div class="field"><label for="l-list">Project</label><input id="l-list" name="tasklist" value="${esc(r.tasklist || "")}" list="l-lists">
+        <datalist id="l-lists">${S.projects.map(p => `<option value="${esc(p.name)}">`).join("")}</datalist></div>
+      <div class="field"><label for="l-note">Note</label><textarea id="l-note" name="note">${esc(r.note)}</textarea></div>
+      ${t ? `<button class="btn" type="button" data-open="${t.id}">Open task</button>` : ""}
+      <span class="err" id="lErr"></span>
+    </form>
+    <footer><button class="btn danger" id="lDel" type="button">Delete</button><div class="spacer"></div>
+      <button class="btn" data-close type="button">Cancel</button><button class="btn primary" form="lForm">Save</button></footer>
+  </aside>`;
+  S.editing = id;
+  $("#l-note").focus();
+  $("#lForm").onsubmit = async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target)), patch = {};
+    for (const k of ["title", "date", "tasklist", "note"]) if (f[k] !== (r[k] ?? "")) patch[k] = f[k];
+    if ((f.status || null) !== (r.status || null)) patch.status = f.status || null;
+    try { if (Object.keys(patch).length) await saveLog(id, patch); closeDrawer(); }
+    catch (err) { $("#lErr").textContent = "Couldn't save: " + errText(err); }
+  };
+  $("#lDel").onclick = async e => {
+    if (!e.target.classList.contains("armed")) { e.target.classList.add("armed"); e.target.textContent = "Confirm delete"; return; }
+    try { await removeLog(id); closeDrawer(); } catch { $("#lErr").textContent = "Couldn't delete. Try again."; }
   };
 }
 function closeDrawer() { $("#drawerRoot").innerHTML = ""; S.editing = null; }
@@ -900,7 +951,7 @@ document.addEventListener("keydown", e => { if (e.key === "Escape" && S.editing)
 
 /* ---------- events ---------- */
 document.addEventListener("click", e => {
-  const el = e.target.closest("[data-tday],[data-tspan],[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],#copyReport");
+  const el = e.target.closest("[data-tday],[data-tspan],[data-logday],[data-view],[data-filter],[data-clear],[data-goto],[data-open],[data-close],[data-toggle],[data-expand],[data-sf],[data-sfp],[data-level],[data-span],[data-log],#copyReport");
   if (!el) return;
   if (el.id === "copyReport") {
     const text = reportText(), msg = $("#copyMsg");
@@ -926,6 +977,7 @@ document.addEventListener("click", e => {
   else if (el.hasAttribute("data-clear")) S.filter = null;
   else if (el.dataset.goto) { S.cursor = parse(el.dataset.goto); S.view = "today"; }
   else if (el.dataset.open) return openDrawer(Number(el.dataset.open));
+  else if (el.dataset.log) return openLogDrawer(Number(el.dataset.log));
   else if (el.hasAttribute("data-close")) return closeDrawer();
   render();
 });
