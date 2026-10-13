@@ -492,6 +492,19 @@ def delete_task(tid: int, x_key: str = Header("")):
     return {"ok": True}
 
 
+@app.post("/api/worklog")
+def add_log(body: dict, x_key: str = Header("")):
+    check(x_key)
+    row = {"date": valid_date(body.get("date"), None), "title": str(body.get("title") or "").strip(),
+           "tasklist": body.get("tasklist") or None, "note": str(body.get("note") or "").strip(),
+           "status": body.get("status") if body.get("status") in LABEL else None}
+    if not row["date"] or not row["title"]:
+        raise HTTPException(400, "Date and title are required")
+    if log_exists(row["date"], row["title"], row["note"]):
+        raise HTTPException(409, "Same entry is already logged on that day")
+    return sb("POST", "worklog", row)[0]
+
+
 @app.patch("/api/worklog/{wid}")
 def update_log(wid: int, body: dict, x_key: str = Header("")):
     check(x_key)
