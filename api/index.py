@@ -377,7 +377,7 @@ def proceed(chat, draft_id, d):
         try:
             tid = apply_item(it)
             if not log_exists(d["date"], it["title"], it["note"]):
-                sb("POST", "worklog", {"date": d["date"], "title": it["title"], "tasklist": it["tasklist"],
+                sb("POST", "worklog", {"date": d["date"], "title": it["title"], "tasklist": it.get("tasklist"),
                                        "note": it["note"], "status": it["status"], "draft_id": draft_id},
                    prefer="return=minimal")
             it["applied"] = tid
