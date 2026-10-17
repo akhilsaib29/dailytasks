@@ -95,7 +95,7 @@ Existing tasks (number | task list | status | title):
 Task lists: {lists}
 
 Rules:
-- One item per thing they did or said. Split compound sentences.
+- One item per thing they did or said. Split compound sentences. Every bullet or line in the notes gets its own item: never drop or merge lines, even ones that match no task (those are log only).
 - note: the work log entry. Just what they said, first person, cleaned up but close to their own words. Do not embellish.
 - A work log entry is NOT a task. Link each item to a task only like this:
   * If it is about an existing task (including meetings, calls or discussions about that work), set "match" to that task's number. Prefer matching: a refinement, follow-up or next step of an existing task is that task, not a new one.
@@ -329,6 +329,9 @@ def handle_message(msg):
                  {"draft": draft, "status": "pending", "source": old["source"] + "\n\nCorrection: " + text})[0]
     else:
         raw = ask_llm(build_prompt(text, cands, lists))
+        lines = bullet_count(text)
+        if raw.get("action") != "redate" and len(raw.get("items") or []) < lines:  # model dropped lines: ask once more
+            raw = ask_llm(build_prompt(text + f"\n\n(There are {lines} bullet lines above. Return at least {lines} items, one per line.)", cands, lists))
         if raw.get("action") == "redate":
             return offer_redate(chat, text, valid_date(raw.get("date"), None))
         draft = clean_draft(raw, cands, lists, today().isoformat())
@@ -336,6 +339,10 @@ def handle_message(msg):
             return send(chat, "I couldn't find any work in that. Say what you did or need to do.")
         row = sb("POST", "drafts", {"chat_id": chat, "source": text, "draft": draft})[0]
     send(chat, format_draft(draft), buttons(row["id"]))
+
+
+def bullet_count(text):
+    return sum(1 for l in text.splitlines() if re.match(r"\s*([-•*]|\d+[.)])\s+\S", l))
 
 
 def offer_redate(chat, text, new):
@@ -588,4 +595,5 @@ if __name__ == "__main__":
     assert '"action": "redate"' in build_prompt("x", cands, lists)
     assert "Zoho (never Jovo" in build_prompt("x", cands, lists)
     assert fix_names("Hi Mambo, the jovo CRM with Suyas") == "Hi Mumbo, the Zoho CRM with Suyash"
+    assert bullet_count("Fri 16 Oct\n- NDS review\n- RC_Review\n• VAPT\n1. EC setup\nplain line") == 4
     print("self-check ok")
