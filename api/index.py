@@ -72,19 +72,24 @@ def transcribe(data, filename):
 
 def ask_llm(prompt):
     # Groq retires models now and then: try the configured one, then known-good fallbacks.
-    models = dict.fromkeys(m for m in (E("GROQ_MODEL"), "llama-3.3-70b-versatile", "openai/gpt-oss-120b") if m)
+    # No json mode: Groq's strict JSON check rejects long drafts, so pull the JSON object out of plain text instead.
+    models = dict.fromkeys(m for m in (E("GROQ_MODEL"), "openai/gpt-oss-120b", "moonshotai/kimi-k2-instruct",
+                                       "qwen/qwen3-32b", "openai/gpt-oss-20b") if m)
     errors = []
     for model in models:
-        r = http.post(f"{GROQ}/chat/completions", headers=groq_auth(), json={
-            "model": model, "temperature": 0.2, "response_format": {"type": "json_object"},
+        r = http.post(f"{GROQ}/chat/completions", headers=groq_auth(), timeout=25, json={
+            "model": model, "temperature": 0.2, "max_tokens": 8000,
             "messages": [{"role": "user", "content": prompt}]})
-        if r.is_success:
-            return json.loads(r.json()["choices"][0]["message"]["content"])
-        errors.append(f"{model} {r.status_code}: {r.text[:300]}")
-        try:  # json mode rejects near-misses; the raw output it rejected often parses fine
-            return json.loads(re.search(r"\{.*\}", r.json()["error"]["failed_generation"], re.S).group())
-        except Exception:
-            pass
+        try:
+            r.raise_for_status()
+            text = re.sub(r"<think>.*?</think>", "", r.json()["choices"][0]["message"]["content"] or "", flags=re.S)
+            out = json.loads(re.search(r"\{.*\}", text, re.S).group())
+            if isinstance(out, dict):
+                return out
+            errors.append(f"{model}: not a JSON object")
+        except Exception as e:
+            errors.append(f"{model} {r.status_code}: {(r.text if r.is_error else str(e))[:150]}")
+    print("ask_llm failed:", errors)  # full detail lands in Vercel logs
     raise RuntimeError("Groq: " + " | ".join(errors))
 
 
@@ -449,7 +454,7 @@ def telegram(update: dict, x_telegram_bot_api_secret_token: str = Header("")):
     except Exception as e:  # always 200, or Telegram retries the same update forever
         chat = msg.get("chat", {}).get("id")
         if allowed(chat):
-            send(chat, f"⚠️ Something failed: {escape(str(e))[:300]}")
+            send(chat, f"⚠️ Something failed: {escape(str(e)[:800])}")
     return {"ok": True}
 
 
