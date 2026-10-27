@@ -72,16 +72,20 @@ def transcribe(data, filename):
 
 def ask_llm(prompt):
     # Groq retires models now and then: try the configured one, then known-good fallbacks.
-    models = dict.fromkeys(m for m in (E("GROQ_MODEL"), "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "llama-3.1-8b-instant") if m)
+    models = dict.fromkeys(m for m in (E("GROQ_MODEL"), "llama-3.3-70b-versatile", "openai/gpt-oss-120b") if m)
+    errors = []
     for model in models:
         r = http.post(f"{GROQ}/chat/completions", headers=groq_auth(), json={
             "model": model, "temperature": 0.2, "response_format": {"type": "json_object"},
             "messages": [{"role": "user", "content": prompt}]})
-        if r.status_code not in (400, 404) or ("model" not in r.text and "json_validate_failed" not in r.text):
-            break
-    if r.is_error:
-        raise RuntimeError(f"Groq {r.status_code}: {r.text[:300]}")
-    return json.loads(r.json()["choices"][0]["message"]["content"])
+        if r.is_success:
+            return json.loads(r.json()["choices"][0]["message"]["content"])
+        errors.append(f"{model} {r.status_code}: {r.text[:300]}")
+        try:  # json mode rejects near-misses; the raw output it rejected often parses fine
+            return json.loads(re.search(r"\{.*\}", r.json()["error"]["failed_generation"], re.S).group())
+        except Exception:
+            pass
+    raise RuntimeError("Groq: " + " | ".join(errors))
 
 
 # ---------- drafting ----------
