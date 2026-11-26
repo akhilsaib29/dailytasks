@@ -549,6 +549,62 @@ def delete_log(wid: int, x_key: str = Header("")):
     sb("DELETE", f"worklog?id=eq.{wid}", prefer="return=minimal")
     return {"ok": True}
 
+# ---- Sticky board ----
+NOTE_COLORS = ("#fde68a", "#fbcfe8", "#bbf7d0", "#bae6fd", "#ddd6fe", "#fed7aa")
+
+
+def clean_tags(v):
+    out = []
+    for t in (v if isinstance(v, list) else []):
+        t = str(t).strip().lstrip("#").lower()[:24]
+        if t and t not in out:
+            out.append(t)
+    return out[:10]
+
+
+@app.get("/api/notes")
+def list_notes(x_key: str = Header("")):
+    check(x_key)
+    return sb("GET", "notes?order=id")
+
+
+@app.post("/api/notes")
+def add_note(body: dict, x_key: str = Header("")):
+    check(x_key)
+    row = {"text": str(body.get("text") or "")[:2000], "tags": clean_tags(body.get("tags")),
+           "color": body.get("color") if body.get("color") in NOTE_COLORS else NOTE_COLORS[0],
+           "x": float(body.get("x") or 20), "y": float(body.get("y") or 20), "rot": float(body.get("rot") or 0)}
+    return sb("POST", "notes", row)[0]
+
+
+@app.patch("/api/notes/{nid}")
+def update_note(nid: int, body: dict, x_key: str = Header("")):
+    check(x_key)
+    patch = {}
+    if "text" in body:
+        patch["text"] = str(body["text"])[:2000]
+    if "tags" in body:
+        patch["tags"] = clean_tags(body["tags"])
+    if body.get("color") in NOTE_COLORS:
+        patch["color"] = body["color"]
+    for k in ("x", "y", "rot"):
+        if k in body:
+            patch[k] = float(body[k])
+    if "closed" in body:
+        patch["closed"] = bool(body["closed"])
+        patch["closed_at"] = datetime.now(timezone.utc).isoformat() if patch["closed"] else None
+    if patch:
+        sb("PATCH", f"notes?id=eq.{nid}", patch, prefer="return=minimal")
+    return {"ok": True}
+
+
+@app.delete("/api/notes/{nid}")
+def delete_note(nid: int, x_key: str = Header("")):
+    check(x_key)
+    sb("DELETE", f"notes?id=eq.{nid}", prefer="return=minimal")
+    return {"ok": True}
+
+
 
 @app.get("/api/setup")
 def setup(key: str, request: Request):

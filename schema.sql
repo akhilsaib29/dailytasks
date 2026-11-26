@@ -65,3 +65,19 @@ alter table kv       enable row level security;
 -- create table if not exists kv (key text primary key, value jsonb, updated_at timestamptz default now());
 -- alter table worklog enable row level security;
 -- alter table kv enable row level security;
+
+
+-- ===== Sticky board (run once in Supabase SQL editor) =====
+create table if not exists notes (
+  id         bigint generated always as identity primary key,
+  text       text default '',
+  tags       text[] default '{}',
+  color      text default '#fde68a',
+  x          double precision default 20,
+  y          double precision default 20,
+  rot        double precision default 0,
+  closed     boolean default false,
+  closed_at  timestamptz,
+  created_at timestamptz default now()
+);
+alter table notes enable row level security;
