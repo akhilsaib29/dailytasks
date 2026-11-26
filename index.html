@@ -279,7 +279,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
   background:radial-gradient(var(--line) 1px,transparent 1px) 0 0/22px 22px,var(--bg)}
 .sfloor{position:absolute;left:0;right:0;bottom:0;height:78px;background:linear-gradient(var(--side),var(--line));border-top:2px solid var(--line-2)}
 .sfloor span{position:absolute;right:12px;bottom:6px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
-.snote{position:absolute;width:200px;height:180px;background:var(--c);color:#1f2937;border-radius:3px 3px 12px 3px;box-shadow:0 6px 14px rgba(15,23,42,.22);display:flex;flex-direction:column}
+.snote{text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;position:absolute;width:200px;height:180px;background:var(--c);color:#1f2937;border-radius:3px 3px 12px 3px;box-shadow:0 6px 14px rgba(15,23,42,.22);display:flex;flex-direction:column}
 .sgrip{display:flex;align-items:center;gap:6px;padding:4px 6px;cursor:grab;background:rgba(0,0,0,.07);touch-action:none;user-select:none}
 .sgrip:active{cursor:grabbing}
 .sdot{width:16px;height:16px;border-radius:50%;border:2px solid rgba(0,0,0,.35);background:var(--c);padding:0;min-width:0;min-height:0}
@@ -290,7 +290,7 @@ svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-widt
 .schip{background:rgba(0,0,0,.12);border-radius:99px;padding:0 6px;font-size:11px;font-weight:600}
 .schip button{border:0;background:none;padding:0 0 0 3px;color:inherit;min-width:0;min-height:0;font-size:12px}
 .stagin{border:0;border-bottom:1px dashed rgba(0,0,0,.35);background:transparent;color:inherit;font-size:11px;width:56px;padding:0;outline:none}
-.snote.shut{width:140px;height:126px;box-shadow:0 2px 5px rgba(15,23,42,.3);filter:saturate(.85) brightness(.96);pointer-events:none}
+.snote.shut{width:140px;height:126px;box-shadow:0 2px 5px rgba(15,23,42,.3);pointer-events:none;backface-visibility:hidden}
 .snote.shut .stxt{padding:6px 8px;font-size:11px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:6;-webkit-box-orient:vertical}
 .snote.land{animation:thud .35s ease-out}
 @keyframes thud{0%{margin-top:0}35%{margin-top:-14px}70%{margin-top:0}85%{margin-top:-4px}100%{margin-top:0}}
@@ -896,10 +896,10 @@ function stickyView() {
 function noteHtml(n, W, H) {
   if (n.closed) {
     const l = Math.max(0, Math.min(W - SW, n.x)), t = H - SH - 10 - (n.id % 4) * 6;
-    return `<div class="snote shut${S.landed === n.id ? " land" : ""}" style="--c:${n.color};left:${l}px;top:${t}px;transform:rotate(${n.rot}deg)"><div class="stxt">${esc(n.text)}</div></div>`;
+    return `<div class="snote shut${S.landed === n.id ? " land" : ""}" style="--c:${n.color};left:${Math.round(l)}px;top:${Math.round(t)}px;transform:rotate(${n.rot}deg)"><div class="stxt">${esc(n.text)}</div></div>`;
   }
   const l = Math.max(0, Math.min(W - NW, n.x)), t = Math.max(0, Math.min(H - NH, n.y));
-  return `<div class="snote" data-nid="${n.id}" style="--c:${n.color};left:${l}px;top:${t}px;transform:rotate(${n.rot}deg)">
+  return `<div class="snote" data-nid="${n.id}" style="--c:${n.color};left:${Math.round(l)}px;top:${Math.round(t)}px">
     <div class="sgrip"><button class="sdot" data-ncolor="${n.id}" title="Colour" aria-label="Change colour"></button><button class="sclose" data-nclose="${n.id}">Close</button></div>
     <textarea class="stext" data-ntext="${n.id}" placeholder="Write something">${esc(n.text)}</textarea>
     <div class="stags">${(n.tags || []).map(t => `<span class="schip">#${esc(t)}<button data-ntagdel="${n.id}:${esc(t)}" aria-label="Remove tag">×</button></span>`).join("")}<input class="stagin" data-ntagin="${n.id}" placeholder="+ tag"></div></div>`;
@@ -912,7 +912,7 @@ function drawSticky() {
 }
 async function newNote() {
   const b = $("#sBoard"), k = S.notes.filter(n => !n.closed).length, W = b.clientWidth, H = b.clientHeight;
-  const body = { x: 20 + (k * 34) % Math.max(40, W - NW - 40), y: 20 + (k * 26) % Math.max(40, H - NH - 120), rot: +(Math.random() * 6 - 3).toFixed(1), color: NCOL[Math.floor(Math.random() * NCOL.length)] };
+  const body = { x: 20 + (k * 34) % Math.max(40, W - NW - 40), y: 20 + (k * 26) % Math.max(40, H - NH - 120), rot: 0, color: NCOL[Math.floor(Math.random() * NCOL.length)] };
   try { const n = await api("notes", { method: "POST", body: JSON.stringify(body) }); S.notes.push(n); render(); document.querySelector(`[data-ntext="${n.id}"]`)?.focus(); }
   catch (e) { S.notesErr = /notes/.test(e.message) ? "The notes table is missing. Run the Sticky board SQL from schema.sql in Supabase." : "Couldn't add a note."; render(); }
 }
@@ -933,8 +933,8 @@ document.addEventListener("pointerdown", e => {
 });
 document.addEventListener("pointermove", e => {
   if (!drag) return; const b = $("#sBoard");
-  drag.el.style.left = Math.max(0, Math.min(b.clientWidth - NW, drag.l + e.clientX - drag.sx)) + "px";
-  drag.el.style.top = Math.max(0, Math.min(b.clientHeight - NH, drag.t + e.clientY - drag.sy)) + "px";
+  drag.el.style.left = (Math.max(0, Math.min(b.clientWidth - NW, drag.l + e.clientX - drag.sx)) | 0) + "px";
+  drag.el.style.top = (Math.max(0, Math.min(b.clientHeight - NH, drag.t + e.clientY - drag.sy)) | 0) + "px";
 });
 document.addEventListener("pointerup", () => { if (!drag) return; npatch(drag.id, { x: parseFloat(drag.el.style.left), y: parseFloat(drag.el.style.top) }); drag = null; });
 let ntimer = {};
